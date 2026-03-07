@@ -2,7 +2,7 @@ from os.path import join
 import argparse
 import time
 
-import utils.checkpoint as checkpoint
+import torch.utils.checkpoint as checkpoint
 
 
 def get_args():

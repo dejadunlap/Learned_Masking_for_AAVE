@@ -1,2 +1,6 @@
 path/*
 path/
+**__pycache*
+**cached**
+**checkpoint**
+**pretrained_weights**

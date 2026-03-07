@@ -1,12 +1,12 @@
 from collections import namedtuple
 from transformers import BertModel, BertPreTrainedModel
-from transformers.modeling_bert import BertForSequenceClassification
-from transformers.modeling_roberta import RobertaForSequenceClassification
-from transformers.modeling_distilbert import DistilBertForSequenceClassification
-from transformers.configuration_roberta import RobertaConfig
-from transformers.tokenization_bert import BertTokenizer
-from transformers.tokenization_roberta import RobertaTokenizer
-from transformers.tokenization_distilbert import DistilBertTokenizer
+from transformers.models.bert.modeling_bert import BertForSequenceClassification
+from transformers.models.roberta.modeling_roberta import RobertaForSequenceClassification
+from transformers.models.distilbert.modeling_distilbert import DistilBertForSequenceClassification
+from transformers.models.roberta.configuration_roberta import RobertaConfig
+from transformers.models.bert.tokenization_bert import BertTokenizer
+from transformers.models.roberta.tokenization_roberta import RobertaTokenizer
+from transformers.models.distilbert.tokenization_distilbert import DistilBertTokenizer
 import torch 
 import torch.nn as nn
 

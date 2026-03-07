@@ -5,15 +5,17 @@ import torch.nn as nn
 
 from .base import BaseTrainer
 from .hooks.base_hook import HookContainer
-from .hooks.cosine_lr_scheduler import LRScheduler
 from utils.stat_tracker import RuntimeTracker
 from utils.timer import Timer
 import utils.eval_meters as eval_meters
 import optim as optim
 import types
 from collections import Counter
+from data_loader import SeqClsDataIter
+from transformers.models.bert.tokenization_bert import BertTokenizer
 
-def seqcls_batch_to_device(self, batched):
+
+def seqcls_batch_to_device(batched):
     uids = batched[0]
     input_ids, golds, attention_mask, token_type_ids = map(
         lambda x: x.cuda(), batched[1:]
@@ -25,8 +27,8 @@ def seqcls_batch_to_device(self, batched):
             "input_ids": input_ids,
             "attention_mask": attention_mask,
             "token_type_ids": token_type_ids,
-        },
-        None,
+        }, 
+        token_type_ids
     )
 
 class BertFinetuner(BaseTrainer):
@@ -36,6 +38,7 @@ class BertFinetuner(BaseTrainer):
         self.task_metrics = data_iter.metrics
         self.batch_to_device = seqcls_batch_to_device
         self._wrap_datasplits(data_iter)
+        print(self.trn_dl)
 
         # logging tools.
         self.tracker = RuntimeTracker(metrics_to_track=[])
@@ -57,16 +60,6 @@ class BertFinetuner(BaseTrainer):
         self.masker_scheduler = masker.masker_scheduler if masker is not None else None
         self._init_sparsity_control()
 
-        # init lr scheduler hook
-        if self.conf.do_cosinelr:
-            scheduler = LRScheduler(
-                len(self.trn_dl),
-                self.conf.num_epochs,
-                self.conf.num_snapshots,
-                opt,
-                self.conf.checkpoint_root,
-            )
-            hooks.append(scheduler)
 
         # init the hook for the training.
         hook_container = HookContainer(world_env={"trainer": self}, hooks=hooks)
@@ -85,12 +78,15 @@ class BertFinetuner(BaseTrainer):
                         hook_container.on_validation_end(eval_res=eval_res)
 
                 with self.timer("load_data", epoch=self._epoch_step):
-                    uids, golds, batched, _ = self.batch_to_device(batched)
+                    uids, golds, inputs, _ = self.batch_to_device(batched)
 
                 # forward for "pretrained model+classifier".
                 with self.timer("forward_pass", epoch=self._epoch_step):
-                    logits, *_ = self._model_forward(**batched)
+                    print(inputs)
+                    logits, *_ = self._model_forward(**inputs)
                     # the cross entropy by default uses reduction='mean'
+                    print("logits shape:", logits.shape)
+                    print("golds shape:", golds.shape)
                     loss = self.criterion(logits, golds)
 
                 # backward for "pretrained model+classifier".
@@ -259,12 +255,11 @@ class BertFinetuner(BaseTrainer):
         self.model.train()
         return eval_res
 
-    def _model_forward(self, **kwargs):  # accepting *args is removed for safety...
-        if (
-            self.model_ptl == "roberta" or self.model_ptl == "distilbert"
-        ) and "token_type_ids" in kwargs:
+    def _model_forward(self, **kwargs):
+        if (self.model_ptl == "roberta" or self.model_ptl == "distilbert") and "token_type_ids" in kwargs:
             kwargs.pop("token_type_ids")
-        return self.model(**kwargs)
+        output = self.model(**kwargs)
+        return output.logits
 
     def _init_training(self, model):
         model = self._parallel_to_device(model)

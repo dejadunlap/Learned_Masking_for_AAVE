@@ -21,7 +21,7 @@ class EvaluationRecorder(Hook):
     """record the best performing state and evaluation results."""
 
     def __init__(self, init_state_where_, where_, which_metric="accuracy"):
-        if which_metric not in _valid_metrics:
+        if which_metric[0] not in set(_valid_metrics):
             raise ValueError("Invalid evaluation metric!")
         super(EvaluationRecorder, self).__init__()
         self.init_state_where_ = init_state_where_

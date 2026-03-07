@@ -37,11 +37,11 @@ class BaseTrainer(object):
         return self._epoch_step
 
     def _wrap_datasplits(self, data_iter):
-        for split_name in ("trn_dl", "val_dl", "tst_dl"):
+        for split_name, attr_name in [("trn_dl", "train_examples"), ("val_dl", "val_examples"), ("tst_dl", "test_examples")]:
             try:
-                ds = getattr(data_iter, split_name)
+                ds = getattr(data_iter, attr_name)
             except AttributeError:
-                self.log_fn(f"[WARN]: skip ``None`` split: {split_name}")
+                self.log_fn(f"[WARN]: skip ``None`` split: {attr_name}")
                 continue
             if split_name == "trn_dl":
                 sampler = RandomSampler

@@ -1,6 +1,7 @@
 import json
 import copy
 from tqdm import tqdm
+import os
 
 # example class formatting ex. from the tsv file directly
 class SentenceExample(object):
@@ -20,7 +21,7 @@ class SentenceExample(object):
 
 # bert input class formatting examples into BERT appropriate format
 class BertInputFeature(object):
-    def __init__(self, uuid, input_ids, attention_mask, token_type_ids, labels=[0,1]):
+    def __init__(self, uuid, input_ids, attention_mask, token_type_ids, label):
         self.uuid = uuid
         self.input_ids = input_ids
         self.attention_mask = attention_mask
@@ -42,6 +43,7 @@ class AAVEDataset(object):
         self.data_dir = data_dir
         self.train_examples = self.get_split_examples("train")
         self.val_examples = self.get_split_examples("dev")
+        self.test_examples = self.get_split_examples("test")
 
     def get_split_examples(self, which_split):
         where_ = os.path.join(self.data_dir, "{}.tsv".format(which_split))
@@ -58,10 +60,13 @@ class AAVEDataset(object):
             next(f)
             for idx, line in enumerate(f):
                 line = line.strip().split("\t")
-                uuid, text, label = line[0], line[1], line[2]
-                sentences_exs.append(
-                    SentenceExample(uuid, text, label)
-                )
+                try:
+                    uuid, text, label = line[0], line[1], line[2]
+                    sentences_exs.append(
+                        SentenceExample(uuid, text, label)
+                    )
+                except: 
+                    continue
         return sentences_exs
 
 # function to convert exs from tsv to BERT appropriate format
@@ -71,7 +76,7 @@ def example_to_feature(examples, tokenizer, max_seq_len, label_list, pad_token=0
     print("[INFO] Converting our Examples into Features")
     for idx, ex in enumerate(tqdm(examples)):
         #tokenizes the input
-        inputs = tokenizer.encode_plus(ex.sent, add_special_tokens=True, max_length=max_seq_len)
+        inputs = tokenizer(ex.sent, add_special_tokens=True, max_length=max_seq_len)
         input_ids, token_type_ids = inputs["input_ids"], inputs["token_type_ids"]
         attention_mask = [1] * len(input_ids)
 
