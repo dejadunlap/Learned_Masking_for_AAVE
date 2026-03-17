@@ -82,9 +82,14 @@ class BertFinetuner(BaseTrainer):
 
                 # forward for "pretrained model+classifier".
                 with self.timer("forward_pass", epoch=self._epoch_step):
-                    print(inputs)
-                    logits, *_ = self._model_forward(**inputs)
+                    if self.conf.model_scheme == "postagging":
+                        logits, bert_out, *_ = self._model_forward(**inputs)
+                    else:
+                        output = self._model_forward(**inputs)
+                        logits = output.logits
+                    # logits, *_ = self._model_forward(**inputs)
                     # the cross entropy by default uses reduction='mean'
+                    print("logits: ", logits)
                     print("logits shape:", logits.shape)
                     print("golds shape:", golds.shape)
                     loss = self.criterion(logits, golds)
@@ -193,7 +198,8 @@ class BertFinetuner(BaseTrainer):
                     if self.conf.model_scheme == "postagging":
                         logits, bert_out, *_ = self._model_forward(**batched)
                     else:
-                        logits, *_ = self._model_forward(**batched)
+                        output = self._model_forward(**batched)
+                        logits = output.logits
                     loss = self.criterion(logits, golds).mean().item()
                     preds = torch.argmax(logits, dim=-1, keepdim=False)
                     all_losses.append(loss)
@@ -259,7 +265,7 @@ class BertFinetuner(BaseTrainer):
         if (self.model_ptl == "roberta" or self.model_ptl == "distilbert") and "token_type_ids" in kwargs:
             kwargs.pop("token_type_ids")
         output = self.model(**kwargs)
-        return output.logits
+        return output
 
     def _init_training(self, model):
         model = self._parallel_to_device(model)

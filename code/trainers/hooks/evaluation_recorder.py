@@ -47,7 +47,7 @@ class EvaluationRecorder(Hook):
     def on_validation_end(self, eval_res):
         if eval_res is None:
             return
-        curr_score = eval_res["val_dl"][self.which_metric]
+        curr_score = eval_res["val_dl"][self.which_metric[0]]
         if curr_score > self.best_score:
             self.best_step = deepcopy(self.batch_step)
             self.best_state = {
