@@ -2,11 +2,14 @@
 import os
 import copy
 import torch
+from datetime import datetime
 
 from parameters import get_args
 from trainers.hooks import EvaluationRecorder, SparsityRecorder
 from trainers.finetuner import BertFinetuner
 from data_loader import SeqClsDataIter
+import configs.task_configs as task_configs
+import csv
 from transformers.models.bert.modeling_bert import BertForSequenceClassification
 from transformers.models.bert.tokenization_bert import BertTokenizer
 
@@ -17,7 +20,6 @@ import masking.sparsity_control as sp_control
 import utils.checkpoint as checkpoint
 import utils.logging as logging
 import utils.param_parser as param_parser
-
 
 config = dict(
     ptl="bert",
@@ -46,7 +48,7 @@ config = dict(
 
 def init_task(conf):
     tokenizer = BertTokenizer.from_pretrained(conf.model)
-    data_iter = SeqClsDataIter(conf.model, tokenizer, conf.max_seq_len)
+    data_iter = task_configs.task2dataiter[conf.task](conf.task, conf.model, tokenizer, conf.max_seq_len)
     conf.logger.log(f"Creating and loading pretrained {conf.ptl.upper()} model.")
     
     model = BertForSequenceClassification.from_pretrained(
@@ -202,8 +204,79 @@ def finetune_on_fixed_masks(conf, model, masker, data_iter):
     trainer = BertFinetuner(_conf, logger=_conf.logger, data_iter=data_iter)
 
     # training/tuning.
-    trainer.train(model=_model, masker=None, hooks=recorder_hooks)
+    trainer.evaluate(model=_model, masker=None, hooks=recorder_hooks)
 
+def experiment_with_mask(conf, model, masker, inverse, data_iter, baseline=False):
+    _conf = copy.deepcopy(conf)
+    _model = copy.deepcopy(model)
+    assert _conf.do_MS
+
+    # running the experiments with the masks
+    if not baseline:
+        assert _conf.do_MS
+        # Invert the masks before freezing
+        for name, module in _model.named_modules():
+            if hasattr(module, 'mask'):
+                with torch.no_grad():
+                    if inverse: 
+                        # inverting the learned mask - 'turning off' most important features for distinguishing AAVE/SAE
+                        binary_mask = (module.mask > conf.threshold).float()
+                        module.mask.data = 1.0 - binary_mask
+                module.mask.requires_grad = False
+
+    tokenizer = BertTokenizer.from_pretrained(conf.model)
+
+    results = {}
+    for task in ["boolQ", "sst2", "multirc", "wsc", "copa"]:
+        for dialect in ["sae", "aave"]:
+            task_name = f"{task}_{dialect}"
+            conf.logger.log(f"[INFO] Evaluating inverse={inverse} mask on {task_name} and is baseline? = {baseline}")
+
+            # swap conf to point at the new task
+            _conf.task = task_name
+            _conf.do_MS = True
+
+            if task in ["boolQ", "multirc"]:
+                _conf.max_seq_len = 256
+            else:
+                _conf.max_seq_len = 128
+
+            # build a fresh data iterator for this task
+            data_iter_cls = task_configs.task2dataiter[task_name]
+            #try:
+            task_data_iter = data_iter_cls(
+                    task_name, conf.model, tokenizer, conf.max_seq_len
+                )
+            """
+            except Exception as e:
+                conf.logger.log(f"[WARN] Could not load data for {task_name}: {e}")
+                continue
+            """
+
+            # fresh model copy per task so tasks don't bleed into each other
+            _model_task = copy.deepcopy(_model)
+
+            # point checkpointing at a task-specific subdirectory
+            _conf.checkpoint_root = os.path.join(
+                conf.checkpoint_root,
+                f"{'inv' if inverse else 'learned'}_mask",
+                task_name
+            )
+            os.makedirs(_conf.checkpoint_root, exist_ok=True)
+
+            # recorders for this task
+            recorder_hooks = init_recorders(_conf, masker=None)
+
+            # train on NLU task with frozen mask
+            trainer = BertFinetuner(_conf, logger=_conf.logger, data_iter=task_data_iter)
+            trainer.train(model=_model_task, masker=None, hooks=recorder_hooks)
+
+            results[task_name] = {
+                "checkpoint": _conf.checkpoint_root
+            }
+
+    return results
+            
 
 def main(conf):
     # general init.
@@ -215,6 +288,9 @@ def main(conf):
 
     # init the task.
     model, data_iter = init_task(conf)
+
+    # save a clean copy of the unpatched model for the baseline experiment
+    baseline_model = copy.deepcopy(model)
 
     # init the mask.
     model, masker = confirm_experiment(conf, model)
@@ -230,12 +306,52 @@ def main(conf):
     conf.logger.log("Starting training/validation.")
     trainer.train(model, masker, hooks=recorder_hooks)
 
+    conf.logger.log("Finishing training/validation for SAE/AAVE Classification")
+
+     # load best checkpoint so experiments use best model, not last step
+    best_state_path = os.path.join(conf.checkpoint_root, "best_state")
+    if os.path.exists(best_state_path):
+        conf.logger.log("[INFO] Loading best checkpoint for mask experiments.")
+        model.load_state_dict(torch.load(best_state_path))
+    else:
+        conf.logger.log("[WARN] No best checkpoint found, using final training state.")
+
     # continue the fine-tuning on the trained masks.
-    if conf.do_tuning_on_MS:
-        finetune_on_fixed_masks(conf, model, masker, data_iter)
+    #if conf.do_tuning_on_MS:
+        #finetune_on_fixed_masks(conf, model, masker, data_iter)
+
+    # run mask experiments before finalizing logs
+    conf.logger.log("Starting mask experiments.")
+
+    # experiment #1 - inverted mask (shut off AAVE/SAE-distinguishing features)
+    conf.logger.log("[EXPERIMENT 1] Inverted mask on NLU tasks.")
+    results_inverse = experiment_with_mask(conf, model, masker, inverse=True, data_iter=data_iter)
+
+    # experiment #2 - learned mask applied to NLU tasks (do features transfer?)
+    conf.logger.log("[EXPERIMENT 2] Learned mask on NLU tasks.")
+    results_transfer = experiment_with_mask(conf, model, masker, inverse=False, data_iter=data_iter)
+
+    # experiment #3 - unpatched baseline model, no mask
+    conf.logger.log("[EXPERIMENT 3] Baseline (no mask) on NLU tasks.")
+    results_baseline = experiment_with_mask(conf, baseline_model, masker=None, inverse=False, 
+                         data_iter=data_iter, baseline=True)
+
+    # saving results to csv files
+    conf.logger.log(f"Saving Experimental Results to Directory: results/results_{datetime.now()}")
+    with open(f"results/results_{datetime.now()}/inverse.csv", mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerows(results_inverse)
+
+    with open(f"results/results_{datetime.now()}/baseline.csv", mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerows(results_baseline)
+
+    with open(f"results/results_{datetime.now()}/transfer.csv", mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerows(results_transfer)
 
     # update the status.
-    conf.logger.log("Finishing training/validation.")
+    conf.logger.log("Finished with Experiments.")
     conf.is_finished = True
     logging.save_arguments(conf)
     os.system(f"echo {conf.checkpoint_root} >> {conf.job_id}")

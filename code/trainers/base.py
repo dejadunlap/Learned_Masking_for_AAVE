@@ -37,20 +37,20 @@ class BaseTrainer(object):
         return self._epoch_step
 
     def _wrap_datasplits(self, data_iter):
-        for split_name, attr_name in [("trn_dl", "train_examples"), ("val_dl", "val_examples"), ("tst_dl", "test_examples")]:
+        for attr_name in ["trn_dl", "val_dl", "tst_dl"]:
             try:
                 ds = getattr(data_iter, attr_name)
             except AttributeError:
                 self.log_fn(f"[WARN]: skip ``None`` split: {attr_name}")
                 continue
-            if split_name == "trn_dl":
+            if attr_name == "trn_dl":
                 sampler = RandomSampler
-            elif split_name == "val_dl" or split_name == "tst_dl":
+            elif attr_name == "val_dl" or attr_name == "tst_dl":
                 sampler = SequentialSampler
             else:
                 raise ValueError
             setattr(
                 self,
-                split_name,
+                attr_name,
                 DataLoader(ds, sampler=sampler(ds), batch_size=self.conf.batch_size),
             )

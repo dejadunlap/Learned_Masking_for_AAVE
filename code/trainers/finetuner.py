@@ -38,7 +38,6 @@ class BertFinetuner(BaseTrainer):
         self.task_metrics = data_iter.metrics
         self.batch_to_device = seqcls_batch_to_device
         self._wrap_datasplits(data_iter)
-        print(self.trn_dl)
 
         # logging tools.
         self.tracker = RuntimeTracker(metrics_to_track=[])
@@ -89,9 +88,7 @@ class BertFinetuner(BaseTrainer):
                         logits = output.logits
                     # logits, *_ = self._model_forward(**inputs)
                     # the cross entropy by default uses reduction='mean'
-                    print("logits: ", logits)
-                    print("logits shape:", logits.shape)
-                    print("golds shape:", golds.shape)
+
                     loss = self.criterion(logits, golds)
 
                 # backward for "pretrained model+classifier".

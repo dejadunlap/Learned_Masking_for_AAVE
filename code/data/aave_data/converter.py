@@ -6,10 +6,10 @@ import random
 """
 File convert the original dataset compiled from other sources and convert to expected format with AAVE/SAE labels for mask training
 """
-file_path = "./data/orig_data.tsv"
+file_path = "./data/aave_data/orig_data.csv"
 
 try:
-    df = pd.read_csv(file_path, sep="\t", header=0)
+    df = pd.read_csv(file_path, sep=",", header=0)
 
     print(df.head())
 except FileNotFoundError: 
@@ -65,5 +65,4 @@ with open(tsv_test_file, mode="w", newline="") as f:
         tsv_writer.writerows(test_rows)
     except Exception as e: 
         print(f"Ran into the following error while converting data {e}")
-
 

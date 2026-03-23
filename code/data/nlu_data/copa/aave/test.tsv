@@ -1,0 +1,101 @@
+id	text_a	text_b	label
+29bc18f1-6828-4d08-ba17-94f2341437b8	The man turned on the faucet.	Water was flowin' from the spout.	0
+7160ed1a-2b5a-47e3-8988-d34b12ab70fd	I tipped the bottle.	Da liquid in da bottle poured out.	0
+6868cb52-b35b-48dc-9fc9-880c757e60aa	Dat boy was crackin' up.	His brother tickled him.	0
+c7a0c943-0755-4775-be15-f857208b0b35	The detective pointed out somethin' off in the case.	He finished up his theory.	0
+be392799-6bb5-4d5c-89fe-951b08f48b8d	The woman ain't want no second beer.	She was the one drivin' tonight.	0
+c9a2549a-24bd-4223-b76b-9703e37e5b4b	Da man's clothes fit loose.	He lost some weight.	0
+2514f7e4-815a-499a-98f7-26689e12ed25	Fixin' that computer cost a grip.	I got it fixed up.	0
+6c570887-c2d2-4172-8e1f-d868bca1ecea	I got sidetracked from my convo with that lady.	Errybody in the room was talkin'.	0
+96eb3df1-418b-418d-9ab2-96d50aef82bb	I dabbed the floor wit a paper towel.	I spilled juice on the floor.	0
+7ec1468f-a0fa-411c-9366-4d91169f7a2f	The runner had on shorts.	She planned to run along the beach.	0
+4491816f-cdf3-48d2-8fd9-f96b1f430fe4	Dem friends' debate kept goin' on forever.	The friends was on the same page.	0
+5ba91a1b-ec44-41d6-81ea-843080afdb71	I got winded.	I went up a buncha stairs.	0
+5fe4d66e-27fc-48b5-8545-294b1a6d4481	The fans in the stadium was cheerin'.	Da game ended in a tie.	0
+6e6131fc-9bb7-4352-8e6f-e5e3e4590eef	The archeologist dug up the site.	She read up on the site's history.	0
+e982afe0-59de-4665-9ad6-c2b3576a93c5	The fugitive was hidin' from the police.	The fugitive still out there.	0
+847e1e75-dfaf-450b-9dec-edd85c00494f	Da room was dim.	I opened up the blinds.	0
+937b746f-d054-4c6b-963c-6fa9e7895b47	Da car stopped at da crosswalk.	The pedestrian waited on the sidewalk.	0
+516c0209-5a6f-40d8-be03-d71958d77dbc	Dat car was lookin' dirty.	The owner took it to the car wash.	0
+607361c8-a06f-4437-91bc-8fc804d3c4d1	The security guard tackled dude.	The man reached into his pocket.	0
+cc2779ff-07dc-48a2-b2b2-19ae328934f7	The doctor done misdiagnosed the patient.	The patient told the doctor some private stuff.	0
+aa7e505f-96a9-4706-acfa-0a3aca8f1940	The kid caught a life-threatening sickness.	She ain't get vaccinated.	0
+86d834a0-b223-43df-9d1f-c515fe05ad61	The young woman couldn't get into the bar.	She forgot her ID.	0
+e745e97e-e978-4d39-8286-0be0993ae4b0	The doctors cut off the patient's leg.	It was beat up bad.	0
+eae822c1-174d-4fc2-acb6-2926c1fd0ead	They thought the woman was her sister.	The woman looked like her sister.	0
+f873130c-ad7c-49ba-9724-ce59e25c46f1	The man got disabled.	His family cut him off.	0
+5270f76b-badb-46ac-824a-60fff9501c1a	The man lifted up that heavy box.	He scratched his back.	0
+5e77e1e3-562f-4a7f-8568-9bc96ebfaf50	The man peeped the woman.	He had his back turned to her.	0
+a4a8d365-b8cd-421d-92b9-dd6543af1f58	I got a package in the mail.	The package piqued my curiosity.	0
+38381983-75f9-4bae-bd93-d4d10bf2cc31	The cowgirl threw her lasso towards the horse.	The lasso caught up wit the horse.	0
+88cfc1fa-fe38-43bf-9669-3ef8a3de04cf	The man hit the lottery.	He got rich.	0
+d1ae0c87-8761-4ce1-bd05-bbece507dd63	The man went into denial about the tragedy.	He got over it easy.	0
+6049ce4d-91eb-432d-bb03-c63a28eaed79	The gardener pulled them weeds.	Dem weeds came up out the dirt.	0
+b9c7d613-3550-4122-98c8-dc34d5b4f723	I guzzled down dat pitcher of water.	I walked upstairs. -> I walked upstairs.	0
+20845ff6-1bf1-4e28-be8f-48f2a9970838	The couple got engaged.	They spent some time apart.	0
+9cfce052-9679-4d04-8d8e-47774c172324	The woman's hair fell in her face.	She pulled her hair back with a clip.	0
+c8b69d92-e89c-4e57-a0e3-8ab49b4093cc	The woman covered her ears.	The fire alarm was goin' off.	0
+76148678-6c88-4f51-8b83-0510012dd91a	My eyes got red and swole up.	I was crackin' up.	0
+5d9fad15-a144-41e6-acc4-51d38f13f22b	I moved to a new city.	I found a job that pay better.	0
+8542cad6-bf1e-41c2-a972-a767a67afab5	De hospital sent da patient home.	Da patient's fam came to see him.	0
+e7c748aa-2749-469e-afba-459ac985565a	The boy skipped dinner.	His mama cooked his favorite meal.	0
+5cd800c0-ae93-4197-a260-0e8bc4b309b3	I slipped on the floor.	Da tile was cracked.	0
+cc02856a-910a-4c64-ae12-1eda6fbb647a	The woman got herself a lawyer.	She decided to sue her boss.	0
+2425c92a-fae1-4537-af5e-f4575703f15d	Dat boy was feelin' homesick.	He was beefin' with his sister.	0
+95b50efa-9479-4e25-99cf-0114c435e3aa	My grandma done passed away.	My family had a reunion.	0
+8000b795-0a52-43ff-abb9-75b2983b87ac	The politician got busted for fraud.	He got kicked outta office.	0
+1bf1c236-59d7-43dd-9691-67a1b2c342c4	I drank a cup of coffee.	I fell asleep.	0
+0f613f9b-0a05-4c56-b837-616da24cfd0b	Dat boy was crackin' up.	His brother kicked him.	0
+90d22a12-1f99-415d-9658-6f1d418ab61b	Marine life done dropped.	Oil done spilled into the ocean.	0
+7475de03-9733-49c3-8cdb-711dc4194eec	The woman gave the man her digits.	She was grossed out by him.	0
+39d0f51e-c302-47f2-b2bb-f1fca5852207	We found some empty seats in the theater.	The movie started.	0
+6117f1d6-fbb8-4b54-bc6d-e25702e58006	The boss decided not to hire the applicant.	The applicant ain't pass the background check.	0
+7f55f334-4113-4c23-aa29-2baf88a4c544	The woman took her family on vacation.	She got a salary bonus.	0
+a9f37a7b-b385-4049-a5e3-19647da50f0d	Errybody in the class turned to look at the student.	The student's phone was ringin'.	0
+20192e5d-8d0f-4353-93e7-84cb5680070b	Da grape juice fermented.	The juice done turned into wine.	0
+811cf058-44e7-42f0-ab8b-f664784c23b8	The girl found a bug in her cereal.	She poured milk in the bowl.	0
+0471f054-a5b6-4f17-b8fa-d57a55455bb3	The daddy turned off the kids' TV.	It was bedtime fo' the kids.	0
+81e86899-cf4d-4008-a907-f8e649415d48	The woman had a infection.	She washed her hands.	0
+ac833dc0-504c-4fed-b6b9-8216854cbfc8	Da mama needed help lookin' after her kids.	She sent the kids to daycare.	0
+d126f96d-712d-47d8-967b-572db1bfcd4b	The parents peeped their daughter's creativity.	They taught her how to ride a bike.	0
+505ff9b3-b206-4e89-83de-769ff54c3333	The terrorist blew up the bomb.	Dey deactivated da bomb.	0
+807ffa2f-08a4-4a62-89fd-5c66df38aeaf	I ain't trust what that salesman was pitchin'.	I turned down his offer.	0
+59831b15-87e4-43b2-8fe6-d305368a1a09	The ring on my finger stuck.	My finger swole up.	0
+19028714-cbaa-43b9-acab-6b629ba5ce04	The bartender ain't serve the patron.	The patron was by theyself.	0
+fae2a14c-dd63-4c0f-b331-0ecb475ce522	Da woman got called up for jury duty.	She cancelled her appointments.	0
+51f28b40-996a-4b08-a69d-168650de6deb	The man signed the document.	The transaction went through.	0
+cc2d2381-d81f-4491-8f62-f97dc7f9c5dc	The kid caught a life-threatening sickness.	She got adopted.	0
+376f32e3-77b0-4dcd-a989-8fc6de8e87e8	The audience booed the comedian off the stage.	He told a racist joke.	0
+bc7cecd1-1937-4eb9-b53e-7c4f3be2dda6	Da service at da restaurant was slow.	The restaurant was packed.	0
+0f0a9d31-466f-4988-baad-2930a28f7d39	My closet was a hot mess.	I set it up.	0
+03cdc041-aaf6-45fa-b164-105274d52589	I jumped up outta instinct, scared.	I heard folks laughin' in the next room.	0
+7845dcb7-9e18-48a6-9398-7a531bebdfb0	The girl got a trophy.	She won a spelling bee.	0
+285493be-7c74-456b-bd01-a5a1a3e04ed3	The chandelier done broke on the floor.	The chandelier fell from the ceiling.	0
+c3251487-585f-492e-8958-2dffbd5de925	De clock stopped ticking.	The clock was showin' the wrong time.	0
+57c24e80-cec9-4afa-bd46-74787f374a1b	The man felt thankful to be alive.	He got cured of cancer.	0
+74531c49-71a0-4b7f-8680-ee9731fe62d0	The girl nicely said nah to the hamburger.	She liked fast food.	0
+935c3cca-51e0-4363-9db8-51b0fb727897	The boy painted a picture for his mama.	His mama hung the picture on the wall.	0
+465cf5e3-5784-4851-be1c-3f710fcedefe	The woman wanted to be a doctor.	She went to medical school.	0
+566b083c-31ee-497f-89fa-bf0e5f525101	The crowd stood up and clapped hard for the band.	The band came back out on stage.	0
+484e6ec7-1e82-43b5-9efd-128f35f22f27	The girl wanted to rock some earrings.	She got a tat.	0
+41991913-fde1-41ac-9818-8de00030bc8f	The folks at the party was hidin' behind the couch.	It was a surprise party.	0
+3340d8e5-bb44-40a6-8bcd-9d643ceeb8c0	Dat book turned into a big ol' bestseller.	Da author faded into obscurity.	0
+4f671963-e87d-4709-a9d4-c7b3b4f9e41f	I pressed my shirt.	It was clean.	0
+919d55ba-fd9f-41a4-88f8-af6552eaf2c8	The man drank water with his meal.	His meal was spicy.	0
+d126e668-5919-4dea-bfda-496af12c7b1d	I drank a cup of coffee.	I stopped yawning.	0
+90a0d3e2-34b9-41b1-8b5b-aa52e46fefa4	The man put on some pounds.	He got his shoes shined.	0
+7ebf7405-9a88-4fa6-b4a2-88d88e3e68bd	De investigators called the man's death a suicide.	He got kids.	0
+73eee0e4-2d43-498f-944c-57fb3e757c3f	The teacher gave the students some homework.	The students was complainin'.	0
+2834acdb-2f67-4819-86e6-1dade0456465	I hung up da phone.	The caller told me who he was.	0
+e6fb24da-b531-46b0-9517-4867489c91f8	Marine life done dropped.	Boats was sailin' through the ocean.	0
+0b5be0b4-370b-4477-979d-7a8151c5053d	Cars pulled over to the side of the road.	A hollerin' ambulance was comin' up.	0
+2737ffd9-d648-474d-a794-a56dd6e4e04a	Da airplane engine was messed up.	Da airplane crashed.	0
+4feec0a7-601e-4972-968b-73e1cd246cf5	My knees gave out on the stairs.	Da railing came loose from da wall.	0
+8dc2b804-c7b8-4443-8452-acc425db091f	I rubbed sandpaper on the wood.	De wood got sticky.	0
+3bfcd5db-43e1-4530-a523-8f06e48d2bd4	The woman put up with her friend's difficult behavior.	The woman felt like her friend was takin' advantage of her kindness.	0
+c1f7abaf-eacb-474d-a2e4-ff973271f3e4	The woman had a infection.	She took antibiotics.	0
+8cedbb25-715d-42ac-8d95-ad4a9743ddac	The terrorist blew up the bomb.	Da bomb went off.	0
+c567daa7-78d8-4e97-8f37-9d3de1ac9c7f	The woman was hummin' to herself.	She was nervous.	0
+7e1107ab-99bc-4267-9a0f-5f4f18e1fb44	Da woman stayed away from public places.	She was catchin'.	0
+ef6aff03-98d2-4e66-a8c0-359399b11e37	The man begged for forgiveness.	Da woman felt bad for him.	0
+b00f46e3-f87e-487f-85b8-c6afcaf646f7	Da swimmer won da race.	She got a gold medal.	0
