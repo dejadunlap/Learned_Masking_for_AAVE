@@ -9,7 +9,7 @@ class Logger:
     Very simple prototype logger that will store the values to a JSON file
     """
 
-    def __init__(self, file_folder):
+    def __init__(self, file_folder="data/"):
         """
         :param filename: ending with .json
         :param auto_save: save the JSON file after every addition

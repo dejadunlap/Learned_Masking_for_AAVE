@@ -62,9 +62,11 @@ class SeqClsDataIter(object):
         self.metrics = task2metrics[task]
         self.pdata = task2dataset[task](task2datadir[task])
         self.num_labels = len(self.pdata.get_labels())
+        print(f"Train examples {len(self.pdata.trn_egs)}")
         self.trn_dl = self.wrap_iter(
             task, model, "trn", self.pdata.trn_egs, tokenizer, max_seq_len
         )
+        
         self.val_dl = self.wrap_iter(
             task, model, "val", self.pdata.val_egs, tokenizer, max_seq_len
         )
@@ -74,35 +76,44 @@ class SeqClsDataIter(object):
             )
 
     def wrap_iter(self, task, model, split, egs, tokenizer, max_seq_len):
+        
         cached_ = os.path.join(
             "data", "cached", f"{task},{max_seq_len},{model},{split},cached.pkl"
         )
         meta_ = cached_.replace(".pkl", ".meta")
+        """
         if os.path.exists(cached_):
-            print("[INFO] loading cached dataset.")
             with open(meta_, "r") as f:
                 meta = json.load(f)
             assert meta["complete"]
             with open(cached_, "rb") as f:
                 fts = pickle.load(f)
-            if fts["uid"] == meta["uid"]:
-                fts = fts["fts"]
-            else:
-                # will not do self recompute for safety
-                raise ValueError("uids of data and meta do not match ...")
+                if fts["uid"] == meta["uid"]:
+                    fts = fts["fts"]
+                    # add this:
+                    if len(fts) == 0:
+                        print(f"[WARN] Cached dataset at {cached_} is empty, recomputing.")
+                        os.remove(cached_)
+                        os.remove(meta_)
+                        # fall through to recompute below
+                    else:
+                        return _SeqClsIter(fts)
+                else:
+                    raise ValueError("uids of data and meta do not match ...")
         else:
-            print("[INFO] computing fresh dataset.")
-            fts = glue_example_to_feature(
+        """
+        print("[INFO] computing fresh dataset.")
+        fts = glue_example_to_feature(
                 self.task, egs, tokenizer, max_seq_len, self.label_list
-            )
-            uid, complete = str(uuid.uuid4()), True
-            try:
-                with open(cached_, "wb") as f:
-                    pickle.dump({"fts": fts, "uid": uid}, f)
-            except:
-                complete = False
-            with open(meta_, "w+") as f:
-                json.dump({"complete": complete, "uid": uid}, f)
+        )
+        uid, complete = str(uuid.uuid4()), True
+        try:
+            with open(cached_, "wb") as f:
+                pickle.dump({"fts": fts, "uid": uid}, f)
+        except:
+            complete = False
+        with open(meta_, "w+") as f:
+            json.dump({"complete": complete, "uid": uid}, f)
         return _SeqClsIter(fts)
 
     @property

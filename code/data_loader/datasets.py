@@ -23,7 +23,7 @@ class GlueDataset(object):
 # class for initial AAVE/SAE classification task to learn computational represetation of AAVE
 class AAVEDataset(object):
     def __init__(self, data_dir):
-        self.name = "aave_task"
+        self.name = "aave_mask"
         self.data_dir = data_dir
         self.trn_egs = self.get_split_examples("train")
         self.val_egs = self.get_split_examples("dev")
@@ -76,8 +76,7 @@ class SST2Dataset(object):
             next(f)
             for idx, line in enumerate(f):
                 line = line.strip().split("\t")
-                print(line)
-                if len(line) != 2: 
+                if len(line) < 3: 
                     continue
                 uid, text, label = line[0], line[1], line[2]
                 sentence_egs.append(
@@ -110,7 +109,7 @@ class BoolQDataset(object):
                 segs = line.strip().split("\t")
                 uid, question, passage, label = segs[0], segs[1], segs[2], segs[3]
                 examples.append(
-                    SentencePairExample(uuid=uid, sent=passage, text_b=question, label=label)
+                    SentencePairExample(uuid=uid, text_a=passage, text_b=question, label=label)
                 )
         return examples
 
@@ -130,6 +129,7 @@ class BoolQDataset(object):
 
     def get_split_examples(self, which_split):
         where_ = os.path.join(self.data_dir, f"{which_split}.tsv")
+        print(f"I'm loading data from {where_}")
         return self._create_examples(where_, which_split)
 
     def get_labels(self):
@@ -142,9 +142,11 @@ class BoolQDataset(object):
                 next(f)
                 for idx, line in enumerate(f):
                     segs = line.strip().split("\t")
-                    uid, question, passage, label = segs[0], segs[1], segs[2], segs[3]
+                    if len(segs) < 4: 
+                        continue
+                    uid, passage, question, label = segs[0], segs[1], segs[2], segs[3]
                     examples.append(
-                    SentencePairExample(uuid=uid, sent=passage, text_b=question, label=label)
+                    SentencePairExample(uuid=uid, text_a=passage, text_b=question, label=label)
                     )
         except Exception as e:
             print(f"Couldn't print because of the following exception {e}")
@@ -180,7 +182,7 @@ class MultiRCDataset(object):
                 uid, passage, question_answer, label = segs[0], segs[1], segs[2], segs[3]
                 # Concatenate question and candidate answer as text_b
                 examples.append(
-                    SentencePairExample(uuid=uid, sent=passage, text_b=question_answer, label=label)
+                    SentencePairExample(uuid=uid, text_a=passage, text_b=question_answer, label=label)
                 )
         return examples
 
@@ -210,10 +212,11 @@ class WSCDataset(object):
             next(f)
             for idx, line in enumerate(f):
                 segs = line.strip().split("\t")
-                uid = f"{which_split}-{idx}"
+                if len(segs) < 4:
+                    continue
                 uid, text, span1, label = segs[0], segs[1], segs[2], segs[3]
                 examples.append(
-                    SentencePairExample(uuid=uid, sent=text, text_b=span1, label=label)
+                    SentencePairExample(uuid=uid, text_a=text, text_b=span1, label=label)
                 )
         return examples
 
@@ -248,6 +251,6 @@ class COPADataset(object):
                 uid, premise, choice, label = segs[0], segs[1], segs[2], segs[3]
                 # Encode as two separate premise+choice pairs, label is which choice is correct
                 examples.append(
-                    SentencePairExample(uuid=uid, sent=premise, text_b=choice, label=label)
+                    SentencePairExample(uuid=uid, text_a=premise, text_b=choice, label=label)
                 )
         return examples

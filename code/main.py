@@ -7,7 +7,6 @@ from datetime import datetime
 from parameters import get_args
 from trainers.hooks import EvaluationRecorder, SparsityRecorder
 from trainers.finetuner import BertFinetuner
-from data_loader import SeqClsDataIter
 import configs.task_configs as task_configs
 import csv
 from transformers.models.bert.modeling_bert import BertForSequenceClassification
@@ -208,76 +207,83 @@ def finetune_on_fixed_masks(conf, model, masker, data_iter):
 
 def experiment_with_mask(conf, model, masker, inverse, data_iter, baseline=False):
     _conf = copy.deepcopy(conf)
+    # carry over learned mask from aave/sae classification
     _model = copy.deepcopy(model)
-    assert _conf.do_MS
 
-    # running the experiments with the masks
     if not baseline:
         assert _conf.do_MS
-        # Invert the masks before freezing
-        for name, module in _model.named_modules():
+        for name, module in model.named_modules():
             if hasattr(module, 'mask'):
                 with torch.no_grad():
-                    if inverse: 
+                    if inverse:
                         # inverting the learned mask - 'turning off' most important features for distinguishing AAVE/SAE
                         binary_mask = (module.mask > conf.threshold).float()
                         module.mask.data = 1.0 - binary_mask
                 module.mask.requires_grad = False
+    else:
+        _conf.do_MS = False
+        # completely new model for the baseline - no mask applied
+        _model = BertForSequenceClassification.from_pretrained(
+                            _conf.model,
+                            num_labels=2,
+                            cache_dir=conf.pretrained_weight_path,
+        )
 
-    tokenizer = BertTokenizer.from_pretrained(conf.model)
+    tokenizer = BertTokenizer.from_pretrained(_conf.model)
 
     results = {}
     for task in ["boolQ", "sst2", "multirc", "wsc", "copa"]:
         for dialect in ["sae", "aave"]:
+
             task_name = f"{task}_{dialect}"
             conf.logger.log(f"[INFO] Evaluating inverse={inverse} mask on {task_name} and is baseline? = {baseline}")
 
-            # swap conf to point at the new task
             _conf.task = task_name
-            _conf.do_MS = True
+            _conf.do_MS = False if baseline else True
 
             if task in ["boolQ", "multirc"]:
-                _conf.max_seq_len = 256
+                _conf.max_seq_len = 512
             else:
                 _conf.max_seq_len = 128
-
-            # build a fresh data iterator for this task
+            
+            # decrease learning rate to accomodate smaller size nlu datasets - prevent overfitting
+            _conf.lr = 1e-5
+            _conf.weight_decay = 0.001
+            
             data_iter_cls = task_configs.task2dataiter[task_name]
-            #try:
             task_data_iter = data_iter_cls(
-                    task_name, conf.model, tokenizer, conf.max_seq_len
-                )
-            """
-            except Exception as e:
-                conf.logger.log(f"[WARN] Could not load data for {task_name}: {e}")
-                continue
-            """
+                task_name, _conf.model, tokenizer, _conf.max_seq_len 
+            )
 
-            # fresh model copy per task so tasks don't bleed into each other
+            # refreshing the model for this task specifically
             _model_task = copy.deepcopy(_model)
 
-            # point checkpointing at a task-specific subdirectory
+            # resetting model classifier head to prevent cross-contamination
+            _model_task.classifier = torch.nn.Linear(_model_task.config.hidden_size, task_data_iter.num_labels)
+
+            # unfreeze full bert classifier - still leaving encoder frozen
+            for name, param in _model_task.named_parameters():
+                if "mask" not in name and "classifier" in name:
+                    param.requires_grad = True
+                    _conf.logger.log(f"[INFO] Unfreezing for NLU training: {name}")
+
             _conf.checkpoint_root = os.path.join(
                 conf.checkpoint_root,
-                f"{'inv' if inverse else 'learned'}_mask",
+                f"{'baseline' if baseline else ('inv' if inverse else 'learned')}_mask",
                 task_name
             )
             os.makedirs(_conf.checkpoint_root, exist_ok=True)
 
-            # recorders for this task
             recorder_hooks = init_recorders(_conf, masker=None)
 
-            # train on NLU task with frozen mask
             trainer = BertFinetuner(_conf, logger=_conf.logger, data_iter=task_data_iter)
             trainer.train(model=_model_task, masker=None, hooks=recorder_hooks)
-
-            results[task_name] = {
-                "checkpoint": _conf.checkpoint_root
-            }
+            results[task_name] = trainer.results
+            del _model_task
+            torch.cuda.empty_cache()
 
     return results
             
-
 def main(conf):
     # general init.
     if conf.override:
@@ -306,7 +312,12 @@ def main(conf):
     conf.logger.log("Starting training/validation.")
     trainer.train(model, masker, hooks=recorder_hooks)
 
+    # saving results
     conf.logger.log("Finishing training/validation for SAE/AAVE Classification")
+    aave_sae_results = trainer.results
+    conf.logger.log(f"Results from AAVE-SAE Classification task: {aave_sae_results}")
+    conf.logger.log(f"Saving AAVE/SAE Classification Results: results/results_aave_{datetime.now()}")
+    save_results(aave_sae_results, "aave_sae")
 
      # load best checkpoint so experiments use best model, not last step
     best_state_path = os.path.join(conf.checkpoint_root, "best_state")
@@ -326,35 +337,50 @@ def main(conf):
     # experiment #1 - inverted mask (shut off AAVE/SAE-distinguishing features)
     conf.logger.log("[EXPERIMENT 1] Inverted mask on NLU tasks.")
     results_inverse = experiment_with_mask(conf, model, masker, inverse=True, data_iter=data_iter)
+    # saving results to csv files
+    conf.logger.log(f"Saving Experimental Results to Directory: results/results_{datetime.now()}")
+    save_results(results_inverse, "inverse")
 
     # experiment #2 - learned mask applied to NLU tasks (do features transfer?)
     conf.logger.log("[EXPERIMENT 2] Learned mask on NLU tasks.")
+    # save results
     results_transfer = experiment_with_mask(conf, model, masker, inverse=False, data_iter=data_iter)
+    save_results(results_transfer, "transfer")
+ 
 
     # experiment #3 - unpatched baseline model, no mask
     conf.logger.log("[EXPERIMENT 3] Baseline (no mask) on NLU tasks.")
+    # save results
     results_baseline = experiment_with_mask(conf, baseline_model, masker=None, inverse=False, 
                          data_iter=data_iter, baseline=True)
-
-    # saving results to csv files
-    conf.logger.log(f"Saving Experimental Results to Directory: results/results_{datetime.now()}")
-    with open(f"results/results_{datetime.now()}/inverse.csv", mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerows(results_inverse)
-
-    with open(f"results/results_{datetime.now()}/baseline.csv", mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerows(results_baseline)
-
-    with open(f"results/results_{datetime.now()}/transfer.csv", mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerows(results_transfer)
+    save_results(results_baseline, "baseline")
 
     # update the status.
     conf.logger.log("Finished with Experiments.")
     conf.is_finished = True
     logging.save_arguments(conf)
     os.system(f"echo {conf.checkpoint_root} >> {conf.job_id}")
+
+def save_results(res, experiment):
+    with open(f"results/results_{datetime.now()}_{experiment}.csv", mode='w', newline='') as file:
+        writer = csv.writer(file)
+        headers = ["Batch", "Validation Results", "Test Results"]
+        writer.writerow(headers)
+        if experiment == "aave_sae":
+            for key, value in res.items():
+                batch = int(key.split("_")[1])
+                val_acc = value["val_dl"]["accuracy"]
+                test_acc = value["tst_dl"]["accuracy"]
+                writer.writerow([batch, val_acc, test_acc])
+        else:
+            for task, results in res.items():
+                writer.writerow([task, "", ""])
+                for key, value in results.items():
+                    batch = int(key.split("_")[1])
+                    val_acc = value["val_dl"]["accuracy"]
+                    test_acc = value["tst_dl"]["accuracy"]
+                    writer.writerow([batch, val_acc, test_acc]) 
+
 
 
 def init_config(conf):

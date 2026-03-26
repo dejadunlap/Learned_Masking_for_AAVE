@@ -17,7 +17,7 @@ def get_args():
     parser.add_argument("--ptl", type=str, default="bert")
     parser.add_argument("--model", type=str, default="bert-base-uncased")
     parser.add_argument("--model_scheme", type=str, default="vector_bag_sentence")
-    parser.add_argument("--task", type=str, default="sst2")
+    parser.add_argument("--task", type=str, default="aave_mask")
     parser.add_argument("--max_seq_len", type=int, default=128)
 
     # training and learning scheme

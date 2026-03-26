@@ -11,7 +11,6 @@ import utils.eval_meters as eval_meters
 import optim as optim
 import types
 from collections import Counter
-from data_loader import SeqClsDataIter
 from transformers.models.bert.tokenization_bert import BertTokenizer
 
 
@@ -47,11 +46,13 @@ class BertFinetuner(BaseTrainer):
             on_cuda=True,
         )
         self.model_ptl = conf.ptl
+        self.results = {}
 
     def train(self, model, masker, hooks=None):
         # init the model for the training.
         opt, model = self._init_training(model)
         self.model = model  # set the model for hooks
+        results = []
         self.model.train()
 
         # init the masker for the training.
@@ -173,90 +174,96 @@ class BertFinetuner(BaseTrainer):
             self._epoch_step += 1
             self.tracker.reset()
             self.logger.save_json()
+            torch.cuda.empty_cache()
         hook_container.on_train_end()
+        return results
 
     def evaluate(self):
         self.model.eval()
         eval_res = {}
         message = ""
-        for eval_name in ("val_dl", "tst_dl"):
-            eval_dl = getattr(self, eval_name)
-            if not eval_dl:
-                message += f" skip evaluation on {eval_name}."
-                eval_res[eval_name] = None
-                continue
-            message += f" finished evaluation on {eval_name}."
-            all_losses, all_golds, all_preds = [], [], []
-            all_golds_ner, all_preds_ner = [], []
-            for batched in eval_dl:
-                # golds is used for compute loss, _golds used for i2t convertion
-                uids, golds, batched, _golds = self.batch_to_device(batched)
-                with torch.no_grad():
-                    if self.conf.model_scheme == "postagging":
-                        logits, bert_out, *_ = self._model_forward(**batched)
+        with torch.no_grad():
+            for eval_name in ("val_dl", "tst_dl"):
+                eval_dl = getattr(self, eval_name)
+                if not eval_dl:
+                    message += f" skip evaluation on {eval_name}."
+                    eval_res[eval_name] = None
+                    continue
+                message += f" finished evaluation on {eval_name}."
+                all_losses, all_golds, all_preds = [], [], []
+                all_golds_ner, all_preds_ner = [], []
+                for batched in eval_dl:
+                    # golds is used for compute loss, _golds used for i2t convertion
+                    uids, golds, batched, _golds = self.batch_to_device(batched)
+                    with torch.no_grad():
+                        if self.conf.model_scheme == "postagging":
+                            logits, bert_out, *_ = self._model_forward(**batched)
+                        else:
+                            output = self._model_forward(**batched)
+                            logits = output.logits
+                        loss = self.criterion(logits, golds).mean().item()
+                        preds = torch.argmax(logits, dim=-1, keepdim=False)
+                        all_losses.append(loss)
+                        all_preds.extend(preds.detach().cpu().numpy())
+                        all_golds.extend(golds.detach().cpu().numpy())
+                        if self.conf.task == "conll2003":
+                            assert bert_out.shape == _golds.shape
+                            if_tgts = batched["if_tgts"]
+                            for sent_idx in range(_golds.shape[0]):
+                                sent_gold = _golds[sent_idx][if_tgts[sent_idx]]
+                                sent_pred = bert_out[sent_idx][if_tgts[sent_idx]]
+                                all_preds_ner.append(
+                                    [
+                                        self.data_iter_t2i[label_id.item()]
+                                        for label_id in sent_pred
+                                    ]
+                                )
+                                all_golds_ner.append(
+                                    [
+                                        self.data_iter_t2i[label_id.item()]
+                                        for label_id in sent_gold
+                                    ]
+                                )
+                eval_res[eval_name] = {}
+                for task_metric in self.task_metrics:
+                    eval_fn = getattr(eval_meters, task_metric)
+                    if len(all_golds_ner) == 0:
+                        eval_res[eval_name][task_metric] = eval_fn(all_preds, all_golds)
+                        self.log_fn(
+                            f"[INFO]: gold distribution on {eval_name}: {Counter(all_golds)}"
+                        )
                     else:
-                        output = self._model_forward(**batched)
-                        logits = output.logits
-                    loss = self.criterion(logits, golds).mean().item()
-                    preds = torch.argmax(logits, dim=-1, keepdim=False)
-                    all_losses.append(loss)
-                    all_preds.extend(preds.detach().cpu().numpy())
-                    all_golds.extend(golds.detach().cpu().numpy())
-                    if self.conf.task == "conll2003":
-                        assert bert_out.shape == _golds.shape
-                        if_tgts = batched["if_tgts"]
-                        for sent_idx in range(_golds.shape[0]):
-                            sent_gold = _golds[sent_idx][if_tgts[sent_idx]]
-                            sent_pred = bert_out[sent_idx][if_tgts[sent_idx]]
-                            all_preds_ner.append(
-                                [
-                                    self.data_iter_t2i[label_id.item()]
-                                    for label_id in sent_pred
-                                ]
-                            )
-                            all_golds_ner.append(
-                                [
-                                    self.data_iter_t2i[label_id.item()]
-                                    for label_id in sent_gold
-                                ]
-                            )
-            eval_res[eval_name] = {}
-            for task_metric in self.task_metrics:
-                eval_fn = getattr(eval_meters, task_metric)
-                if len(all_golds_ner) == 0:
-                    eval_res[eval_name][task_metric] = eval_fn(all_preds, all_golds)
-                    self.log_fn(
-                        f"[INFO]: gold distribution on {eval_name}: {Counter(all_golds)}"
-                    )
-                else:
-                    eval_res[eval_name][task_metric] = eval_fn(
-                        all_preds_ner, all_golds_ner
-                    )
-            # logging.
-            self.log_fn(f"[INFO] Finished evaluation: {message}")
-            self.log_fn_json(
-                name="evaluation",
-                values={
-                    "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-                    "step": self._batch_step,
-                    "epoch": self._epoch_step,
-                    "loss": loss,
-                    **eval_res[eval_name],
-                },
-                tags={"split": eval_name},
-                display=True,
-            )
-            self.log_fn(
-                f"[INFO] Eval results on {eval_name} @ batch_step {self._batch_step}, "
-                f"avg loss: {np.mean(all_losses)}."
-            )
-            for m_name, m_score in eval_res[eval_name].items():
-                self.log_fn(
-                    f"[INFO] Eval results on {eval_name} @ batch_step {self._batch_step},"
-                    f"{m_name}: {m_score:.4f}."
+                        eval_res[eval_name][task_metric] = eval_fn(
+                            all_preds_ner, all_golds_ner
+                        )
+                # logging.
+                self.log_fn(f"[INFO] Finished evaluation: {message}")
+                self.log_fn_json(
+                    name="evaluation",
+                    values={
+                        "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "step": self._batch_step,
+                        "epoch": self._epoch_step,
+                        "loss": loss,
+                        **eval_res[eval_name],
+                    },
+                    tags={"split": eval_name},
+                    display=True,
                 )
+                self.log_fn(
+                    f"[INFO] Eval results on {eval_name} @ batch_step {self._batch_step}, "
+                    f"avg loss: {np.mean(all_losses)}."
+                )
+                for m_name, m_score in eval_res[eval_name].items():
+                    self.log_fn(
+                        f"[INFO] Eval results on {eval_name} @ batch_step {self._batch_step},"
+                        f"{m_name}: {m_score:.4f}."
+                    )
+            # save results in json to be called later        
+            self.results[f"results_{self.batch_step}"] = eval_res
+        
         self.model.train()
-        return eval_res
+        
 
     def _model_forward(self, **kwargs):
         if (self.model_ptl == "roberta" or self.model_ptl == "distilbert") and "token_type_ids" in kwargs:

@@ -125,11 +125,13 @@ def glue_example_to_feature(
 
         # rebuild token_type_ids by finding the [SEP] token position
         sep_token_id = tokenizer.sep_token_id
-        if eg.text_b is not None:
-            # find first [SEP] — everything up to and including it is text_a (segment 0)
+        sep_token_id = tokenizer.sep_token_id
+        if eg.text_b is not None and sep_token_id in input_ids:
+            # find first [SEP] — everything up to and including it is segment 0
             sep_idx = input_ids.index(sep_token_id) + 1
             token_type_ids = [0] * sep_idx + [1] * (len(input_ids) - sep_idx)
         else:
+            # single sentence or truncated before second segment
             token_type_ids = [0] * len(input_ids)
 
         # verify lengths match before padding
