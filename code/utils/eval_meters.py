@@ -9,11 +9,11 @@ from sklearn.metrics import (
 )
 
 
-def accuracy(y, pred):
+def accuracy(pred, y):
     return accuracy_score(y, pred)
 
 
-def f1(y, pred, average=None):
+def f1(pred, y, average="macro"):
     if average:
         return f1_score(y, pred, average=average)
     return f1_score(y, pred)

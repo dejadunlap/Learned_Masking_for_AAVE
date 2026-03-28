@@ -206,24 +206,7 @@ class BertFinetuner(BaseTrainer):
                         all_losses.append(loss)
                         all_preds.extend(preds.detach().cpu().numpy())
                         all_golds.extend(golds.detach().cpu().numpy())
-                        if self.conf.task == "conll2003":
-                            assert bert_out.shape == _golds.shape
-                            if_tgts = batched["if_tgts"]
-                            for sent_idx in range(_golds.shape[0]):
-                                sent_gold = _golds[sent_idx][if_tgts[sent_idx]]
-                                sent_pred = bert_out[sent_idx][if_tgts[sent_idx]]
-                                all_preds_ner.append(
-                                    [
-                                        self.data_iter_t2i[label_id.item()]
-                                        for label_id in sent_pred
-                                    ]
-                                )
-                                all_golds_ner.append(
-                                    [
-                                        self.data_iter_t2i[label_id.item()]
-                                        for label_id in sent_gold
-                                    ]
-                                )
+                    
                 eval_res[eval_name] = {}
                 for task_metric in self.task_metrics:
                     eval_fn = getattr(eval_meters, task_metric)
@@ -337,4 +320,3 @@ class BertFinetuner(BaseTrainer):
                 else -self.conf.masking_scheduler_conf_["lambdas_lr"]
             )
     
-

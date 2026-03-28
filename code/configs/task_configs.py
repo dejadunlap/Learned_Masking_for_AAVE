@@ -2,7 +2,7 @@ from data_loader import SeqClsDataIter, TaggingDataIter, MultipleChoiceDataIter
 from transformers.models.bert.tokenization_bert import BertTokenizer
 
 
-task2metrics = {
+task2main_metric = {
     "aave_mask":    ["accuracy"],
     "boolQ_aave":   ["accuracy"],
     "sst2_aave":    ["accuracy"],

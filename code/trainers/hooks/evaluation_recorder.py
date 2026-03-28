@@ -20,9 +20,10 @@ _valid_metrics = {
 class EvaluationRecorder(Hook):
     """record the best performing state and evaluation results."""
 
-    def __init__(self, init_state_where_, where_, which_metric="accuracy"):
-        if which_metric[0] not in set(_valid_metrics):
-            raise ValueError("Invalid evaluation metric!")
+    def __init__(self, init_state_where_, where_, which_metric=["accuracy"]):
+        for metric in which_metric:
+            if metric not in _valid_metrics:
+                raise ValueError("Invalid evaluation metric!")
         super(EvaluationRecorder, self).__init__()
         self.init_state_where_ = init_state_where_
         self.where_ = where_
@@ -47,7 +48,7 @@ class EvaluationRecorder(Hook):
     def on_validation_end(self, eval_res):
         if eval_res is None:
             return
-        curr_score = eval_res["val_dl"][self.which_metric[0]]
+        curr_score = eval_res["val_dl"][self.which_metric]
         if curr_score > self.best_score:
             self.best_step = deepcopy(self.batch_step)
             self.best_state = {

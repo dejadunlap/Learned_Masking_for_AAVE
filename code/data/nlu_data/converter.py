@@ -24,10 +24,8 @@ for task in ["boolQ", "sst2", "multirc", "wsc", "copa"]:
             train_aave_rows, dev_aave_rows, test_aave_rows = [], [], []
             
             for _, row in df.iterrows():
-                sae_row  = [str(uuid.uuid4()), row['Paragraph'], 
-                            row['Question'] + " " + str(row['Answer']), row['Actual Label']]
-                aave_row = [str(uuid.uuid4()), row['Translated Paragraph'],
-                            row['Translated Question'] + " " + str(row['Translated Answer']), row['Actual Label']]
+                sae_row  = [str(uuid.uuid4()), row['Paragraph'] + " " +row['Question'], str(row['Answer']), row['Actual Label']]
+                aave_row = [str(uuid.uuid4()), row['Translated Paragraph'] + " " +row['Translated Question'], str(row['Translated Answer']), row['Actual Label']]
                 
                 if row['Paragraph'] in train_passages:
                     train_sae_rows.append(sae_row)
