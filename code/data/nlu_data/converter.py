@@ -125,7 +125,7 @@ for task in ["boolQ", "sst2", "multirc", "wsc", "copa"]:
                 sae_rows.append([str(uuid.uuid4()), row['Original'], label])
 
             elif task == "boolQ":
-                label = "1" if row['actual answer'] == "TRUE" else "0"
+                label = "1" if row['actual answer'] == True else "0"
                 aave_rows.append([str(uuid.uuid4()), row['aave passage'], row['aave question'], label])
                 sae_rows.append([str(uuid.uuid4()), row['se passage'], row['se question'], label])
 
@@ -133,10 +133,10 @@ for task in ["boolQ", "sst2", "multirc", "wsc", "copa"]:
                 # each premise gets two rows: one per choice
                 # label=0 means this choice is wrong, label=1 means correct
                 correct = row['Actual Label']  # 0 or 1, indicating which choice is correct
-                aave_rows.append([str(uuid.uuid4()), row['Translated Premise'], row['Translated Choice1'], "1" if correct == "0" else '0'])
-                aave_rows.append([str(uuid.uuid4()), row['Translated Premise'], row['Translated Choice2'], "1" if correct == '1' else '0'])
-                sae_rows.append([str(uuid.uuid4()), row['Premise'], row['Choice1'], '1' if correct == '0' else '0'])
-                sae_rows.append([str(uuid.uuid4()), row['Premise'], row['Choice2'], '1' if correct == '1' else '0'])
+                aave_rows.append([str(uuid.uuid4()), row['Translated Premise'], row['Translated Choice1'], "1" if correct == 0 else '0'])
+                aave_rows.append([str(uuid.uuid4()), row['Translated Premise'], row['Translated Choice2'], "1" if correct == 1 else '0'])
+                sae_rows.append([str(uuid.uuid4()), row['Premise'], row['Choice1'], '1' if correct == 0 else '0'])
+                sae_rows.append([str(uuid.uuid4()), row['Premise'], row['Choice2'], '1' if correct == 1 else '0'])
 
         random.shuffle(sae_rows)
         random.shuffle(aave_rows)

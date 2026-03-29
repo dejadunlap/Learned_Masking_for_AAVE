@@ -14,45 +14,60 @@ import uuid
 task2datadir = {
     "aave_mask": "data/aave_data",
     "boolQ_aave": "data/nlu_data/boolQ/aave",
+    "boolQ_random_aave": "data/nlu_data/boolQ_random/aave",
     "sst2_aave": "data/nlu_data/sst2/aave",
     "multirc_aave": "data/nlu_data/multirc/aave",
     "wsc_aave": "data/nlu_data/wsc/aave",
     "copa_aave": "data/nlu_data/copa/aave",
+    "copa_random_aave": "data/nlu_data/copa_random/aave",
     "boolQ_sae": "data/nlu_data/boolQ/sae",
+    "boolQ_random_sae": "data/nlu_data/boolQ_random/sae",
     "sst2_sae": "data/nlu_data/sst2/sae",
     "multirc_sae": "data/nlu_data/multirc/sae",
     "wsc_sae": "data/nlu_data/wsc/sae",
     "copa_sae": "data/nlu_data/copa/sae",
+    "copa_random_sae": "data/nlu_data/copa_random/sae",
+
 }
 
 
 task2dataset = {
     "aave_mask": AAVEDataset,
     "boolQ_aave": BoolQDataset,
+    "boolQ_random_aave": BoolQDataset,
     "sst2_aave": SST2Dataset,
     "multirc_aave": MultiRCDataset,
     "wsc_aave": WSCDataset,
     "copa_aave": COPADataset, 
+    "copa_random_aave": COPADataset, 
     "boolQ_sae": BoolQDataset,
+    "boolQ_random_sae": BoolQDataset,
     "sst2_sae": SST2Dataset,
     "multirc_sae": MultiRCDataset,
     "wsc_sae": WSCDataset,
-    "copa_sae": COPADataset
+    "copa_sae": COPADataset,
+    "copa_random_sae": COPADataset
+
 }
 
 
 task2metrics = {
     "aave_mask" : ["accuracy"],
     "boolQ_aave": ["accuracy"],
+    "boolQ_random_aave": ["accuracy"],
     "sst2_aave": ["accuracy"],
     "multirc_aave": ["f1", "accuracy"],
     "wsc_aave": ["accuracy"],
     "copa_aave": ["accuracy"],
+    "copa_random_aave": ["accuracy"],
     "boolQ_sae": ["accuracy"],
+    "boolQ_random_sae": ["accuracy"],
     "sst2_sae": ["accuracy"],
     "multirc_sae": ["f1", "accuracy"],
     "wsc_sae": ["accuracy"],
     "copa_sae": ["accuracy"],
+    "copa_random_sae": ["accuracy"],
+
 }
 
 
