@@ -2,6 +2,7 @@ import time
 import numpy as np
 import torch
 import torch.nn as nn
+from sklearn.utils import resample
 
 from .base import BaseTrainer
 from .hooks.base_hook import HookContainer
@@ -30,6 +31,19 @@ def seqcls_batch_to_device(batched):
         token_type_ids
     )
 
+def bootstrap_ci(preds, golds, n_bootstrap=1000, ci=95):
+    preds = preds.detach().cpu().numpy() 
+    golds = golds.detach().cpu().numpy() 
+    scores = []
+    for _ in range(n_bootstrap):
+        idx = resample(range(len(preds)), replace=True)
+        p = [preds[i] for i in idx]
+        g = [golds[i] for i in idx]
+        scores.append(sum(pi == gi for pi, gi in zip(p, g)) / len(p))
+    lower = np.percentile(scores, (100 - ci) / 2)
+    upper = np.percentile(scores, 100 - (100 - ci) / 2)
+    return lower, upper
+
 class BertFinetuner(BaseTrainer):
     def __init__(self, conf, logger, data_iter):
         super(BertFinetuner, self).__init__(conf, logger)
@@ -47,6 +61,7 @@ class BertFinetuner(BaseTrainer):
         )
         self.model_ptl = conf.ptl
         self.results = {}
+        self.bounds = {}
 
     def train(self, model, masker, hooks=None):
         # init the model for the training.
@@ -191,6 +206,7 @@ class BertFinetuner(BaseTrainer):
                     continue
                 message += f" finished evaluation on {eval_name}."
                 all_losses, all_golds, all_preds = [], [], []
+                all_bounds = []
                 all_golds_ner, all_preds_ner = [], []
                 for batched in eval_dl:
                     # golds is used for compute loss, _golds used for i2t convertion
@@ -206,6 +222,11 @@ class BertFinetuner(BaseTrainer):
                         all_losses.append(loss)
                         all_preds.extend(preds.detach().cpu().numpy())
                         all_golds.extend(golds.detach().cpu().numpy())
+
+                # returning upper, lower bounds for the predictions due to smaller datasets
+                all_preds_tensor = torch.tensor(all_preds)
+                all_golds_tensor = torch.tensor(all_golds)
+                lower, upper = bootstrap_ci(all_preds_tensor, all_golds_tensor)
                     
                 eval_res[eval_name] = {}
                 for task_metric in self.task_metrics:
@@ -219,6 +240,10 @@ class BertFinetuner(BaseTrainer):
                         eval_res[eval_name][task_metric] = eval_fn(
                             all_preds_ner, all_golds_ner
                         )
+                
+                eval_res[eval_name]["ci_lower"] = lower
+                eval_res[eval_name]["ci_upper"] = upper
+
                 # logging.
                 self.log_fn(f"[INFO] Finished evaluation: {message}")
                 self.log_fn_json(
@@ -228,6 +253,8 @@ class BertFinetuner(BaseTrainer):
                         "step": self._batch_step,
                         "epoch": self._epoch_step,
                         "loss": loss,
+                        "ci_lower": lower,
+                        "ci_upper": upper,
                         **eval_res[eval_name],
                     },
                     tags={"split": eval_name},
@@ -242,8 +269,19 @@ class BertFinetuner(BaseTrainer):
                         f"[INFO] Eval results on {eval_name} @ batch_step {self._batch_step},"
                         f"{m_name}: {m_score:.4f}."
                     )
-            # save results in json to be called later        
+            # save results, bounds in json to be called later        
             self.results[f"results_{self.batch_step}"] = eval_res
+            self.bounds[f"bounds_{self._batch_step}"] = {
+                split: {"ci_lower": eval_res[split]["ci_lower"], 
+                        "ci_upper": eval_res[split]["ci_upper"]}
+                for split in ("val_dl", "tst_dl") 
+                if eval_res.get(split) is not None
+            }
+            self.log_fn(
+                f"[INFO] 95% CI @ batch_step {self._batch_step}: "
+                f"val [{eval_res.get('val_dl', {}).get('ci_lower', 'N/A'):.3f}, "
+                f"{eval_res.get('val_dl', {}).get('ci_upper', 'N/A'):.3f}]"
+            )
         
         self.model.train()
         
@@ -257,7 +295,9 @@ class BertFinetuner(BaseTrainer):
     def _init_training(self, model):
         model = self._parallel_to_device(model)
 
-        # define the param to optimize.
+        # split params into encoder and classifier groups
+        encoder_lr = getattr(self.conf, 'lr_encoder', self.conf.lr)
+        
         params = [
             {
                 "params": [value],
@@ -266,8 +306,10 @@ class BertFinetuner(BaseTrainer):
                 "param_size": value.size(),
                 "nelement": value.nelement(),
                 "lr": self.conf.lr_for_mask
-                if self.conf.lr_for_mask is not None and "mask" in key
-                else self.conf.lr,
+                    if self.conf.lr_for_mask is not None and "mask" in key
+                    else self.conf.lr  # classifier lr
+                    if "classifier" in key
+                    else encoder_lr,  # encoder lr
             }
             for key, value in model.named_parameters()
             if value.requires_grad

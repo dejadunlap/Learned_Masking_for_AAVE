@@ -38,10 +38,11 @@ config = dict(
     classifier_req_grad=False,
     mask_classifier=True,
     mask_ptl=True,
-    layers_to_mask="2,3,4,5,6,7,8,9,10,11",
+    layers_to_mask="5,6,7,8",
     train_fast=True,
     num_snapshots=10,
     masking_scheduler_conf="lambdas_lr=0,sparsity_warmup=automated_gradual_sparsity,final_sparsity=0.05,sparsity_warmup_interval_epoch=0.1,init_epoch=0,final_epoch=1,initial_sparsity=0.8",
+    checkpoint="./data/cached/",
 )
 
 
@@ -205,35 +206,47 @@ def finetune_on_fixed_masks(conf, model, masker, data_iter):
     # training/tuning.
     trainer.evaluate(model=_model, masker=None, hooks=recorder_hooks)
 
-def experiment_with_mask(conf, model, masker, inverse, data_iter, baseline=False):
+def experiment_with_mask(conf, model, inverse, baseline=False):
     _conf = copy.deepcopy(conf)
+    _model = None
 
     if not baseline:
-        assert _conf.do_MS
-        # apply mask modifications to _model before the loop
         _model = copy.deepcopy(model)
+        masked_count = 0
         for name, module in _model.named_modules():
-            if hasattr(module, 'mask'):
-                with torch.no_grad():
-                    if inverse:
-                        binary_mask = (module.mask > conf.threshold).float()
-                        module.mask.data = 1.0 - binary_mask
-                module.mask.requires_grad = False
+            # check all possible mask attribute names
+            for mask_attr in ['mask', 'weight_mask', 'bias_mask']:
+                if hasattr(module, mask_attr):
+                    mask_tensor = getattr(module, mask_attr)
+                    if not isinstance(mask_tensor, torch.Tensor):
+                        continue
+                    with torch.no_grad():
+                        if inverse:
+                            binary_mask = (mask_tensor > conf.threshold).float()
+                            mask_tensor.data = 1.0 - binary_mask
+                            conf.logger.log(f"[INVERTED MASK] {name}.{mask_attr}")
+                        else:
+                            conf.logger.log(f"[KEEPING MASK] {name}.{mask_attr}")
+                    mask_tensor.requires_grad = False
+                    masked_count += 1
+
+        conf.logger.log(f"[INFO] Total masked tensors found and frozen: {masked_count}")
+        if masked_count == 0:
+            conf.logger.log("[WARN] No masked tensors found — check maskers.py for attribute name")
     else:
-        _conf.do_MS = False
+        # baseline has no masks — leave everything trainable
         _model = BertForSequenceClassification.from_pretrained(
             _conf.model,
             num_labels=2,
             cache_dir=conf.pretrained_weight_path,
         )
-        # freeze everything — only classifier will be unfrozen per task
-        for param in _model.parameters():
-            param.requires_grad = False
 
-    # move base model to CPU while not in use — pull to GPU only during training
+    # move to cpu to save on space
     _model = _model.cpu()
-
     tokenizer = BertTokenizer.from_pretrained(_conf.model)
+
+    # making sure we are letting the classifier update w/o masks
+    _model.classifier = maskers.MaskedLinear0(weight=_model.classifier.weight, bias=_model.classifier.bias,)
 
     results = {}
     for task in ["boolQ", "sst2", "multirc", "copa"]:
@@ -241,38 +254,26 @@ def experiment_with_mask(conf, model, masker, inverse, data_iter, baseline=False
             task_name = f"{task}_{dialect}"
             conf.logger.log(f"[INFO] Evaluating inverse={inverse} mask on {task_name}, baseline={baseline}")
 
+            # setting parameters for the task training
             _conf.task = task_name
-
-            # changing configurations depending on the task
-            _conf.do_MS = False if baseline else True
+            _conf.drop_rate = 0.1
+            _conf.weight_decay = 0.01
             _conf.max_seq_len = 512 if task in ["boolQ", "multirc"] else 128
-
-            # adjusting due to smaller size of multirc dataset
-            if task == "multirc":
-                _conf.lr = 0.001
-                _conf.batch_size = 32
-
-            if task in ["boolQ", "copa"]:
-                _conf.lr = 3e-5
-                _conf.batch_size = 32
+            _conf.eval_every_batch = 10
+            _conf.lr = 2e-5
+            _conf.lr_encoder = 5e-6
 
             # load data
             data_iter_cls = task_configs.task2dataiter[task_name]
             task_data_iter = data_iter_cls(
                 task_name, _conf.model, tokenizer, _conf.max_seq_len
             )
-
-            # reset classifier head in-place rather than deep copying whole model
-            classifier_in_features = _model.config.hidden_size
-            _model.classifier = torch.nn.Linear(
-                classifier_in_features, task_data_iter.num_labels
-            )
-
-            # unfreeze only classifier
+ 
+            # unfreeze everything except masks
             for name, param in _model.named_parameters():
-                if "mask" not in name and "classifier" in name:
+                if "mask" not in name:
                     param.requires_grad = True
-
+            
             _conf.checkpoint_root = os.path.join(
                 conf.checkpoint_root,
                 f"{'baseline' if baseline else ('inv' if inverse else 'learned')}_mask",
@@ -282,12 +283,10 @@ def experiment_with_mask(conf, model, masker, inverse, data_iter, baseline=False
 
             recorder_hooks = init_recorders(_conf, masker=None)
             trainer = BertFinetuner(_conf, logger=_conf.logger, data_iter=task_data_iter)
-
-            # train — model gets moved to GPU inside _init_training
             trainer.train(model=_model, masker=None, hooks=recorder_hooks)
             results[task_name] = trainer.results
 
-            # pull model back to CPU and clear GPU
+            # pull back to CPU and clear GPU between tasks
             _model = _model.cpu()
             del trainer
             del task_data_iter
@@ -297,6 +296,7 @@ def experiment_with_mask(conf, model, masker, inverse, data_iter, baseline=False
     del _model
     torch.cuda.empty_cache()
     return results
+    
 
 def main(conf):
     # general init.
@@ -306,68 +306,106 @@ def main(conf):
             setattr(conf, name, value)
     init_config(conf)
 
-    # init the task.
-    model, data_iter = init_task(conf)
+    # experiementing with messing with which layers are masked
+    which_layers = {
+        "2-11": "2,3,4,5,6,7,8,9,10,11",
+        "2-4": "2,3,4",
+        "5-8": "5,6,7,8",
+        "9-11": "9,10,11"
+    }
 
-    # save a clean copy of the unpatched model for the baseline experiment
-    baseline_model = copy.deepcopy(model)
+    times = {}
 
-    # init the mask.
-    model, masker = confirm_experiment(conf, model)
+    for index, (key, value) in enumerate(which_layers.items()):
+        # timing how long experiments take
+        start_time = datetime.now()
 
-    # init the recorders.
-    recorder_hooks = init_recorders(conf, masker)
+        # experiment with how we chose which layers to mask to see how that effects performance
+        conf.layers_to_mask = value
 
-    # init the trainer (i.e. finetuner.)
-    conf.logger.log("Initialized tasks, masks, recorders, and initing the trainer.")
-    trainer = BertFinetuner(conf, logger=conf.logger, data_iter=data_iter)
+        # should always start with aave/sae classification task
+        conf.task = "aave_mask"
 
-    # training/tuning.
-    conf.logger.log("Starting training/validation.")
-    trainer.train(model, masker, hooks=recorder_hooks)
+        # init the task.
+        model, data_iter = init_task(conf)
 
-    # saving results
-    conf.logger.log("Finishing training/validation for SAE/AAVE Classification")
-    aave_sae_results = trainer.results
-    conf.logger.log(f"Results from AAVE-SAE Classification task: {aave_sae_results}")
-    conf.logger.log(f"Saving AAVE/SAE Classification Results: results/results_aave_{datetime.now()}")
-    save_results(aave_sae_results, "aave_sae")
+        # init the mask.
+        model, masker = confirm_experiment(conf, model)
 
-     # load best checkpoint so experiments use best model, not last step
-    best_state_path = os.path.join(conf.checkpoint_root, "best_state")
-    if os.path.exists(best_state_path):
-        conf.logger.log("[INFO] Loading best checkpoint for mask experiments.")
-        model.load_state_dict(torch.load(best_state_path))
-    else:
-        conf.logger.log("[WARN] No best checkpoint found, using final training state.")
+        # init the recorders.
+        recorder_hooks = init_recorders(conf, masker)    
+        conf.logger.log("Initialized tasks, masks, recorders, and initing the trainer.")
 
-    # continue the fine-tuning on the trained masks.
-    #if conf.do_tuning_on_MS:
-        #finetune_on_fixed_masks(conf, model, masker, data_iter)
+        # init the trainer (i.e. finetuner.)
+        trainer = BertFinetuner(conf, logger=conf.logger, data_iter=data_iter)
 
-    # run mask experiments before finalizing logs
-    conf.logger.log("Starting mask experiments.")
+        # training/tuning aave/sae classification task.
+        conf.logger.log("Starting training/validation for AAVE/SAE Classification.")
+        start_aave = datetime.now()
+        trainer.train(model, masker, hooks=recorder_hooks)
+        end_aave = datetime.now()
 
-    # experiment #1 - inverted mask (shut off AAVE/SAE-distinguishing features)
-    conf.logger.log("[EXPERIMENT 1] Inverted mask on NLU tasks.")
-    results_inverse = experiment_with_mask(conf, model, masker, inverse=True, data_iter=data_iter)
-    # saving results to csv files
-    conf.logger.log(f"Saving Experimental Results to Directory: results/results_{datetime.now()}")
-    save_results(results_inverse, "inverse")
+        # saving results
+        conf.logger.log("Finishing training/validation for SAE/AAVE Classification")
+        aave_sae_results = trainer.results
+        conf.logger.log(f"Results from AAVE-SAE Classification task: {aave_sae_results}")
+        conf.logger.log(f"Saving AAVE/SAE Classification Results: results/results_aave_{datetime.now()}")
+        save_results(aave_sae_results, "aave_sae", which_layers=key)
+        
+        # load best checkpoint so experiments use best model, not last step
+        best_state_path = os.path.join(conf.checkpoint_root, "best_state")
+        if os.path.exists(best_state_path):
+            conf.logger.log("[INFO] Loading best checkpoint for mask experiments.")
+            model.load_state_dict(torch.load(best_state_path))
+        else:
+            conf.logger.log("[WARN] No best checkpoint found, using final training state.")
 
-    # experiment #2 - learned mask applied to NLU tasks (do features transfer?)
-    conf.logger.log("[EXPERIMENT 2] Learned mask on NLU tasks.")
-    # save results
-    results_transfer = experiment_with_mask(conf, model, masker, inverse=False, data_iter=data_iter)
-    save_results(results_transfer, "transfer")
- 
+        # run mask experiments before finalizing logs
+        conf.logger.log("Starting mask experiments.")
 
-    # experiment #3 - unpatched baseline model, no mask
-    conf.logger.log("[EXPERIMENT 3] Baseline (no mask) on NLU tasks.")
-    results_baseline = experiment_with_mask(conf, baseline_model, masker=None, inverse=False, 
-                         data_iter=data_iter, baseline=True)
-    # save results
-    save_results(results_baseline, f"baseline")
+        # experiment #1 - inverted mask (shut off AAVE/SAE-distinguishing features)
+        conf.logger.log("[EXPERIMENT 1] Inverted mask on NLU tasks.")
+        start_inverse = datetime.now()
+        results_inverse = experiment_with_mask(conf, model, inverse=True)
+        end_inverse = datetime.now()
+        conf.logger.log(f"results from inverted experiments {results_inverse}")
+        conf.logger.log(f"Saving Experimental Results to Directory: results/results_{datetime.now()}")
+        save_results(results_inverse, "inverse", which_layers=key)
+
+        # experiment #2 - learned mask applied to NLU tasks (do features transfer?)
+        conf.logger.log("[EXPERIMENT 2] Learned mask on NLU tasks.")
+        start_transfer = datetime.now()
+        results_transfer = experiment_with_mask(conf, model, inverse=False)
+        end_transfer = datetime.now()
+        save_results(results_transfer, "transfer", which_layers=key)
+
+        # experiment #3 - unpatched baseline model, no mask
+        conf.logger.log("[EXPERIMENT 3] Baseline (no mask) on NLU tasks.")
+        start_baseline = datetime.now()
+        results_baseline = experiment_with_mask(conf, model, inverse=False, baseline=True)
+        end_baseline = datetime.now()
+        save_results(results_baseline, f"baseline", which_layers=key)
+
+        end_time = datetime.now
+
+        times[key] = {
+            f"{key}_overall" : end_time - start_time,
+            f"{key}_aave" : end_aave - start_aave,
+            f"{key}_inverse": end_inverse - start_inverse,
+            f"{key}_transfer": end_transfer - start_transfer,
+            f"{key}_baseline": end_baseline - start_baseline,
+        }
+
+    # saving the times from the experiements
+    conf.logger.log(f"Times for the Experiments {times}")
+    with open(f"results/times.csv_{datetime.now()}", "w+") as f: 
+        writer = csv.writerow(f)
+        header = ["Task", "Time Elapsed"]
+
+        writer.writerow(header)
+        for key, value in times:
+            for  key, v in value:
+                writer.writerow(key, v)
 
     # update the status.
     conf.logger.log("Finished with Experiments.")
@@ -375,25 +413,83 @@ def main(conf):
     logging.save_arguments(conf)
     os.system(f"echo {conf.checkpoint_root} >> {conf.job_id}")
 
-def save_results(res, experiment):
-    with open(f"results/results_{datetime.now()}_{experiment}.csv", mode='w', newline='') as file:
+def save_results(res, experiment, which_layers="2-11"):
+    os.makedirs(f"results/{which_layers}", exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    
+    with open(f"results/{which_layers}/results_{timestamp}_{experiment}.csv", mode='w', newline='') as file:
         writer = csv.writer(file)
-        headers = ["Batch", "Validation Results", "Test Results"]
-        writer.writerow(headers)
+
         if experiment == "aave_sae":
+            writer.writerow(["Batch", "Val Accuracy", "Val CI Lower", "Val CI Upper", 
+                             "Test Accuracy", "Test CI Lower", "Test CI Upper"])
             for key, value in res.items():
                 batch = int(key.split("_")[1])
-                val_acc = value["val_dl"]["accuracy"]
-                test_acc = value["tst_dl"]["accuracy"]
-                writer.writerow([batch, val_acc, test_acc])
+                val = value.get("val_dl", {}) or {}
+                tst = value.get("tst_dl", {}) or {}
+                writer.writerow([
+                    batch,
+                    val.get("accuracy", ""),
+                    val.get("ci_lower", ""),
+                    val.get("ci_upper", ""),
+                    tst.get("accuracy", ""),
+                    tst.get("ci_lower", ""),
+                    tst.get("ci_upper", ""),
+                ])
+
         else:
-            for task, results in res.items():
-                writer.writerow([task, "", ""])
-                for key, value in results.items():
-                    batch = int(key.split("_")[1])
-                    val_acc = value["val_dl"]["accuracy"]
-                    test_acc = value["tst_dl"]["accuracy"]
-                    writer.writerow([batch, val_acc, test_acc]) 
+            for task, task_data in res.items():
+                # write task header row
+                writer.writerow([task])
+
+                is_multirc = "multirc" in task
+                if is_multirc:
+                    writer.writerow([
+                        "Batch",
+                        "Val Accuracy", "Val F1", "Val CI Lower", "Val CI Upper",
+                        "Test Accuracy", "Test F1", "Test CI Lower", "Test CI Upper"
+                    ])
+                else:
+                    writer.writerow([
+                        "Batch",
+                        "Val Accuracy", "Val CI Lower", "Val CI Upper",
+                        "Test Accuracy", "Test CI Lower", "Test CI Upper"
+                    ])
+
+                for key, value in task_data.items():
+                    try:
+                        batch = int(key.split("_")[1])
+                    except (IndexError, ValueError):
+                        continue
+
+                    val = value.get("val_dl", {}) or {}
+                    tst = value.get("tst_dl", {}) or {}
+
+                    if is_multirc:
+                        writer.writerow([
+                            batch,
+                            val.get("accuracy", ""),
+                            val.get("f1", ""),
+                            val.get("ci_lower", ""),
+                            val.get("ci_upper", ""),
+                            tst.get("accuracy", ""),
+                            tst.get("f1", ""),
+                            tst.get("ci_lower", ""),
+                            tst.get("ci_upper", ""),
+                        ])
+                    else:
+                        writer.writerow([
+                            batch,
+                            val.get("accuracy", ""),
+                            val.get("ci_lower", ""),
+                            val.get("ci_upper", ""),
+                            tst.get("accuracy", ""),
+                            tst.get("ci_lower", ""),
+                            tst.get("ci_upper", ""),
+                        ])
+
+                # blank row between tasks for readability
+                writer.writerow([])
 
 
 def init_config(conf):
@@ -426,6 +522,7 @@ def init_config(conf):
         if "," in conf.layers_to_mask
         else [int(conf.layers_to_mask)]
     )
+
 
     # init the params for structure pruning.
     if (

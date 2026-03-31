@@ -318,6 +318,7 @@ class MaskedLinear1(MaskedLinearX):
     def forward(self, x):
         M_w, M_b = self.get_masks()
 
+        
         if M_b is not None:
             return F.linear(x, self.weight * M_w, self.bias * M_b)
         return F.linear(x, self.weight * M_w, self.bias)
