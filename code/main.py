@@ -313,6 +313,9 @@ def main(conf):
         "5-8": "5,6,7,8",
         "9-11": "9,10,11"
     }
+    which_layers = {
+        "9-11": "9,10,11"
+    }
 
     times = {}
 
@@ -362,7 +365,9 @@ def main(conf):
 
         # run mask experiments before finalizing logs
         conf.logger.log("Starting mask experiments.")
+        """
 
+        """
         # experiment #1 - inverted mask (shut off AAVE/SAE-distinguishing features)
         conf.logger.log("[EXPERIMENT 1] Inverted mask on NLU tasks.")
         start_inverse = datetime.now()
@@ -386,15 +391,20 @@ def main(conf):
         end_baseline = datetime.now()
         save_results(results_baseline, f"baseline", which_layers=key)
 
-        end_time = datetime.now
-
+        end_time = datetime.now()
+        overall = end_time - start_time
+        inverse = end_inverse - start_inverse
+        aave = end_aave - start_aave
+        transfer = end_transfer - start_transfer
+        baseline = end_baseline - start_baseline
         times[key] = {
-            f"{key}_overall" : end_time - start_time,
-            f"{key}_aave" : end_aave - start_aave,
-            f"{key}_inverse": end_inverse - start_inverse,
-            f"{key}_transfer": end_transfer - start_transfer,
-            f"{key}_baseline": end_baseline - start_baseline,
+            f"{key}_overall" : overall,
+            f"{key}_aave" : aave,
+            f"{key}_inverse": inverse,
+            f"{key}_transfer": transfer,
+            f"{key}_baseline": baseline
         }
+        
 
     # saving the times from the experiements
     conf.logger.log(f"Times for the Experiments {times}")
