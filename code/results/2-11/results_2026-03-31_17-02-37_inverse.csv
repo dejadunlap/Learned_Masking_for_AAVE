@@ -1,4 +1,4 @@
-boolQ_sae
+boolQ_sae,,,,,,
 Batch,Val Accuracy,Val CI Lower,Val CI Upper,Test Accuracy,Test CI Lower,Test CI Upper
 10,0.645,0.58,0.7051249999999999,0.61,0.5,0.71
 20,0.645,0.58,0.715,0.61,0.52,0.71
