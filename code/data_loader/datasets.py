@@ -3,11 +3,14 @@ from .common import SentencePairExample, SentenceExample
 
 __all__ = [
     "AAVEDataset",
-    "BoolQDataset",
+    "QNLIDataset",
     "SST2Dataset",
-    "MultiRCDataset",
-    "WSCDataset",
-    "COPADataset"
+    "RTEDataset",
+    "MNLIDataset",
+    "QQPDataset", 
+    "COLADataset",
+    "WNLIDataset",
+    "STSBDataset",
 ]
 
 class GlueDataset(object):
@@ -84,9 +87,128 @@ class SST2Dataset(object):
                 )
         return sentence_egs
 
-class BoolQDataset(object):
+class QNLIDataset(GlueDataset):
+    """ a sentence pair dataset converted from squad. """
+
     def __init__(self, data_dir):
-        self.name = "boolQ"
+        self.name = "qnli"
+        self.data_dir = data_dir
+        self.trn_egs = self.get_split_examples("train")
+        self.val_egs = self.get_split_examples("dev")
+        self.tst_egs = self.get_split_examples("test")
+
+    def get_split_examples(self, which_split):
+        where_ = os.path.join(self.data_dir, "{}.tsv".format(which_split))
+        print("[INFO] {} is looking for {}".format(self.__class__.__name__, where_))
+        return self._create_examples(where_, which_split)
+
+    def get_labels(self):
+        return ["entailment", "not_entailment"]
+
+    def _create_examples(self, input_file, which_split):
+        """ parse and convert raw string to SentencePairExample """
+        sentence_pair_egs = []
+        with open(input_file, "r") as f:
+            next(f)
+            for idx, line in enumerate(f):
+                segs = line.strip().split("\t")
+                assert len(segs) == 4
+                label = segs[-1]
+                text_a, text_b = segs[1], segs[2]
+                uid = "%s-%s" % (which_split, idx)
+                sentence_pair_egs.append(
+                    SentencePairExample(
+                        uid=uid, text_a=text_a, text_b=text_b, label=label
+                    )
+                )
+        return sentence_pair_egs
+
+class RTEDataset(GlueDataset):
+    """ a sentence pair dataset converted from squad. """
+
+    def __init__(self, data_dir):
+        self.name = "rte"
+        self.data_dir = data_dir
+        self.trn_egs = self.get_split_examples("train")
+        self.val_egs = self.get_split_examples("dev")
+        self.tst_egs = self.get_split_examples("test")
+
+    def get_split_examples(self, which_split):
+        where_ = os.path.join(self.data_dir, "{}.tsv".format(which_split))
+        print("[INFO] {} is looking for {}".format(self.__class__.__name__, where_))
+        return self._create_examples(where_, which_split)
+
+    def get_labels(self):
+        return ["entailment", "not_entailment"]
+
+    def _create_examples(self, input_file, which_split):
+        """ parse and convert raw string to SentencePairExample """
+        sentence_pair_egs = []
+        with open(input_file, "r") as f:
+            next(f)
+            for idx, line in enumerate(f):
+                segs = line.strip().split("\t")
+                assert len(segs) == 4
+                label = segs[-1]
+                text_a, text_b = segs[1], segs[2]
+                uid = "%s-%s" % (which_split, idx)
+                sentence_pair_egs.append(
+                    SentencePairExample(
+                        uid=uid, text_a=text_a, text_b=text_b, label=label
+                    )
+                )
+        return sentence_pair_egs
+
+class MNLIDataset(GlueDataset):
+    """ 
+    multi-genre NLI: 
+        for a pair of sentences, predict whether the second sentence is an entailment, 
+        contradiction, or neutral w.r.t the first one. 
+    NB: 
+        this dataset seems to be problematic.
+        BERT only use MNLI-m, in domain classification.
+    """
+
+    def __init__(self, data_dir):
+        self.name = "mnli"
+        self.data_dir = data_dir
+        self.trn_egs = self.get_split_examples("train")
+        self.val_egs = self.get_split_examples("dev_matched")
+        self.tst_egs = self.get_split_examples("test")
+
+    def get_split_examples(self, which_split):
+        where_ = os.path.join(self.data_dir, "{}.tsv".format(which_split))
+        print("[INFO] {} is looking for {}".format(self.__class__.__name__, where_))
+        return self._create_examples(where_, which_split)
+
+    def get_labels(self):
+        return ["contradiction", "entailment", "neutral"]
+
+    def _create_examples(self, input_file, which_split):
+        """ parse and convert raw string to SentenceExample """
+        sentence_pair_egs = []
+        with open(input_file, "r", encoding="utf-8") as f:
+            next(f)
+            for idx, line in enumerate(f):
+                line = line.strip().split("\t")
+                uid = "%s-%s" % (which_split, idx)
+                text_a, text_b = line[8], line[9]
+                label = line[-1]
+                sentence_pair_egs.append(
+                    SentencePairExample(
+                        uid=uid, text_a=text_a, text_b=text_b, label=label
+                    )
+                )
+        return sentence_pair_egs
+
+
+class QQPDataset(GlueDataset):
+    """
+    Determine whether a pair of questions are semantically equivalent.
+    """
+
+    def __init__(self, data_dir):
+        self.name = "qqp"
         self.data_dir = data_dir
         self.trn_egs = self.get_split_examples("train")
         self.val_egs = self.get_split_examples("dev")
@@ -101,156 +223,123 @@ class BoolQDataset(object):
         return ["0", "1"]
 
     def _create_examples(self, input_file, which_split):
-        """ parse and convert raw string to SentencePairExample """
-        examples = []
+        """ parse and convert raw string to SentenceExample 
+        there are some ill examples in this dataset so they are skipped.
+        """
+        sentence_pair_egs = []
         with open(input_file, "r", encoding="utf-8") as f:
             next(f)
             for idx, line in enumerate(f):
-                segs = line.strip().split("\t")
-                uid, question, passage, label = segs[0], segs[1], segs[2], segs[3]
-                examples.append(
-                    SentencePairExample(uuid=uid, text_a=passage, text_b=question, label=label)
-                )
-        return examples
-
-
-class BoolQDataset(object):
-    """
-    BoolQ: boolean QA. Each example is a (passage, question) pair
-    with a binary true/false label.
-    TSV format: index \t question \t passage \t label
-    """
-    def __init__(self, data_dir):
-        self.data_dir = data_dir
-        print(f"My data dir is {data_dir}")
-        self.trn_egs = self.get_split_examples("train")
-        self.val_egs = self.get_split_examples("dev")
-        self.tst_egs = self.get_split_examples("test")
-
-    def get_split_examples(self, which_split):
-        where_ = os.path.join(self.data_dir, f"{which_split}.tsv")
-        print(f"I'm loading data from {where_}")
-        return self._create_examples(where_, which_split)
-
-    def get_labels(self):
-        return ["0", "1"]
-
-    def _create_examples(self, input_file, which_split):
-        examples = []
-        try:
-            with open(input_file, "r", encoding="utf-8") as f:
-                next(f)
-                for idx, line in enumerate(f):
-                    segs = line.strip().split("\t")
-                    if len(segs) < 4: 
-                        continue
-                    uid, passage, question, label = segs[0], segs[1], segs[2], segs[3]
-                    examples.append(
-                    SentencePairExample(uuid=uid, text_a=passage, text_b=question, label=label)
+                line = line.strip().split("\t")
+                uid = "%s-%s" % (which_split, idx)
+                try:
+                    text_a, text_b, label = line[3], line[4], line[5]
+                except IndexError:  # it seems transformers also did this
+                    print(idx, line)
+                sentence_pair_egs.append(
+                    SentencePairExample(
+                        uid=uid, text_a=text_a, text_b=text_b, label=label
                     )
-        except Exception as e:
-            print(f"Couldn't print because of the following exception {e}")
-        return examples
+                )
+        return sentence_pair_egs
 
-
-class MultiRCDataset(object):
-    """
-    MultiRC: each question has multiple candidate answers, each
-    labeled 0 (wrong) or 1 (correct). Passage is text_a,
-    question+candidate answer is text_b.
-    TSV format: index \t passage \t question \t answer \t label
-    """
+class COLADataset(GlueDataset):
     def __init__(self, data_dir):
+        self.name = "cola"
         self.data_dir = data_dir
         self.trn_egs = self.get_split_examples("train")
         self.val_egs = self.get_split_examples("dev")
         self.tst_egs = self.get_split_examples("test")
 
+
     def get_split_examples(self, which_split):
-        where_ = os.path.join(self.data_dir, f"{which_split}.tsv")
+        where_ = os.path.join(self.data_dir, "{}.tsv".format(which_split))
+        print("[INFO] {} is looking for {}".format(self.__class__.__name__, where_))
         return self._create_examples(where_, which_split)
 
     def get_labels(self):
         return ["0", "1"]
 
     def _create_examples(self, input_file, which_split):
-        examples = []
+        """ parse and convert raw string to SentenceExample """
+        sentence_egs = []
         with open(input_file, "r", encoding="utf-8") as f:
             next(f)
             for idx, line in enumerate(f):
-                segs = line.strip().split("\t")
-                uid, passage, question_answer, label = segs[0], segs[1], segs[2], segs[3]
-                # Concatenate question and candidate answer as text_b
-                examples.append(
-                    SentencePairExample(uuid=uid, text_a=passage, text_b=question_answer, label=label)
+                line = line.strip().split("\t")
+                text_a, label = line[3], line[1]
+                uid = "%s-%s" % (which_split, idx)
+                sentence_egs.append(
+                    SentenceExample(uid=uid, text_a=text_a, label=label)
                 )
-        return examples
+        return sentence_egs
 
+class WNLIDataset(GlueDataset):
+    """ a sentence pair dataset converted from squad. """
 
-class WSCDataset(object):
-    """
-    WSC: Winograd coreference. Given a sentence with a pronoun,
-    determine if it refers to a given span.
-    TSV format: index \t text \t span1 \t span2 \t label
-    """
     def __init__(self, data_dir):
+        self.name = "qnli"
         self.data_dir = data_dir
         self.trn_egs = self.get_split_examples("train")
         self.val_egs = self.get_split_examples("dev")
         self.tst_egs = self.get_split_examples("test")
 
     def get_split_examples(self, which_split):
-        where_ = os.path.join(self.data_dir, f"{which_split}.tsv")
+        where_ = os.path.join(self.data_dir, "{}.tsv".format(which_split))
+        print("[INFO] {} is looking for {}".format(self.__class__.__name__, where_))
         return self._create_examples(where_, which_split)
 
     def get_labels(self):
-        return ["0", "1"]
+        return ["entailment", "not_entailment"]
 
     def _create_examples(self, input_file, which_split):
-        examples = []
-        with open(input_file, "r", encoding="utf-8") as f:
+        """ parse and convert raw string to SentencePairExample """
+        sentence_pair_egs = []
+        with open(input_file, "r") as f:
             next(f)
             for idx, line in enumerate(f):
                 segs = line.strip().split("\t")
-                if len(segs) < 4:
-                    continue
-                uid, text, span1, label = segs[0], segs[1], segs[2], segs[3]
-                examples.append(
-                    SentencePairExample(uuid=uid, text_a=text, text_b=span1, label=label)
+                assert len(segs) == 4
+                label = segs[-1]
+                text_a, text_b = segs[1], segs[2]
+                uid = "%s-%s" % (which_split, idx)
+                sentence_pair_egs.append(
+                    SentencePairExample(
+                        uid=uid, text_a=text_a, text_b=text_b, label=label
+                    )
                 )
-        return examples
+        return sentence_pair_egs
+    
+class STSBDataset(GlueDataset):
+    """ a sentence pair dataset converted from squad. """
 
-
-class COPADataset(object):
-    """
-    COPA: causal reasoning. Given a premise, pick the more
-    plausible cause or effect from two alternatives.
-    Framed as two binary examples per instance (one per alternative).
-    TSV format: index \t premise \t choice1 \t choice2 \t question \t label
-    """
     def __init__(self, data_dir):
+        self.name = "stsb"
         self.data_dir = data_dir
         self.trn_egs = self.get_split_examples("train")
         self.val_egs = self.get_split_examples("dev")
         self.tst_egs = self.get_split_examples("test")
 
-    def get_labels(self):
-        return ["0", "1"]
-
     def get_split_examples(self, which_split):
-        where_ = os.path.join(self.data_dir, f"{which_split}.tsv")
-        return self._create_examples(where_, which_split)
+        where_ = os.path.join(self.data_dir, "{}.tsv".format(which_split))
+        print("[INFO] {} is looking for {}".format(self.__class__.__name__, where_))
+        exs= self._create_examples(where_, which_split)
+        return exs
 
     def _create_examples(self, input_file, which_split):
-        examples = []
-        with open(input_file, "r", encoding="utf-8") as f:
+        """ parse and convert raw string to SentencePairExample """
+        sentence_pair_egs = []
+        with open(input_file, "r") as f:
             next(f)
             for idx, line in enumerate(f):
                 segs = line.strip().split("\t")
-                uid = f"{which_split}-{idx}"
-                uid, premise, choice, label = segs[0], segs[1], segs[2], segs[3]
-                # Encode as two separate premise+choice pairs, label is which choice is correct
-                examples.append(
-                    SentencePairExample(uuid=uid, text_a=premise, text_b=choice, label=label)
+                assert len(segs) == 4
+                label = segs[-1]
+                text_a, text_b = segs[1], segs[2]
+                uid = "%s-%s" % (which_split, idx)
+                sentence_pair_egs.append(
+                    SentencePairExample(
+                        uid=uid, text_a=text_a, text_b=text_b, label=label
+                    )
                 )
-        return examples
+        return sentence_pair_egs

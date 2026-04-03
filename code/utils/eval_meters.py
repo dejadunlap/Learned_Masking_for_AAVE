@@ -1,5 +1,4 @@
-from seqeval.metrics import f1_score as f1_score_ner
-
+from scipy.stats import pearsonr
 from sklearn.metrics import (
     recall_score,
     precision_score,
@@ -45,3 +44,7 @@ def micro_f1(y, pred):
 
 def mcc(y, pred):
     return matthews_corrcoef(y, pred)
+
+def pearson(y, pred):
+    corr_coeff, p_value = pearsonr(y, pred)
+    return corr_coeff

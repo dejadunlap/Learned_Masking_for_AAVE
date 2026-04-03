@@ -1,1 +1,1 @@
-from .data_iters import SeqClsDataIter, TaggingDataIter, MultipleChoiceDataIter
+from .data_iters import SeqClsDataIter

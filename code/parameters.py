@@ -11,7 +11,7 @@ def get_args():
 
     # feed them to the parser.
     parser = argparse.ArgumentParser()
-    parser.add_argument("--override", type=str2bool, default=True)
+    parser.add_argument("--override", type=str2bool, default=False)
 
     # task.
     parser.add_argument("--ptl", type=str, default="bert")

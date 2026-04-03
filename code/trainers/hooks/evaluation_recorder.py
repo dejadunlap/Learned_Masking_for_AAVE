@@ -13,6 +13,7 @@ _valid_metrics = {
     "precision",
     "mcc",
     "f1_score_ner",
+    "pearson"
 }
 # not considering metrics where the lower the better (ppl)
 

@@ -32,16 +32,16 @@ config = dict(
     batch_size=32,
     eval_every_batch=60,
     num_epochs=10,
-    do_BL=False,
-    do_MS=True,
+    do_BL=True,
+    do_MS=False,
     ptl_req_grad=False,
     classifier_req_grad=False,
-    mask_classifier=True,
-    mask_ptl=True,
-    layers_to_mask="5,6,7,8",
+    mask_classifier=False,
+    mask_ptl=False,
+    layers_to_mask=None,
     train_fast=True,
     num_snapshots=10,
-    masking_scheduler_conf="lambdas_lr=0,sparsity_warmup=automated_gradual_sparsity,final_sparsity=0.05,sparsity_warmup_interval_epoch=0.1,init_epoch=0,final_epoch=1,initial_sparsity=0.8",
+    masking_scheduler_conf="",
     checkpoint="./data/cached/",
 )
 
@@ -50,12 +50,17 @@ def init_task(conf):
     tokenizer = BertTokenizer.from_pretrained(conf.model)
     data_iter = task_configs.task2dataiter[conf.task](conf.task, conf.model, tokenizer, conf.max_seq_len)
     conf.logger.log(f"Creating and loading pretrained {conf.ptl.upper()} model.")
-    
+
+    num_labels = 1 if "stsb" in conf.task else 2
     model = BertForSequenceClassification.from_pretrained(
         conf.model,
-        num_labels=2,
+        num_labels=num_labels,
         cache_dir=conf.pretrained_weight_path,
     )
+
+    # accomodatign linear regression for stsb task
+    if "stsb" in conf.task:
+        model.classifier = torch.nn.Linear(model.config.hidden_size, 1)
 
     # we can have the choice to randomly (and partially) initialize the ptl.
     random_reinit.random_init_ptl(conf, model)
@@ -249,7 +254,7 @@ def experiment_with_mask(conf, model, inverse, baseline=False):
     _model.classifier = maskers.MaskedLinear0(weight=_model.classifier.weight, bias=_model.classifier.bias,)
 
     results = {}
-    for task in ["boolQ", "sst2", "multirc", "copa"]:
+    for task in ["cola", "mnli", "qnli", "qqp", "rte", "sst2", "stsb", "wnli"]:
         for dialect in ["sae", "aave"]:
             task_name = f"{task}_{dialect}"
             conf.logger.log(f"[INFO] Evaluating inverse={inverse} mask on {task_name}, baseline={baseline}")
@@ -260,7 +265,8 @@ def experiment_with_mask(conf, model, inverse, baseline=False):
             _conf.weight_decay = 0.01
             _conf.max_seq_len = 512 if task in ["boolQ", "multirc"] else 128
             _conf.eval_every_batch = 10
-            _conf.lr = 2e-5
+            _conf.batch_size = 16
+            _conf.lr = 5e-4 
             _conf.lr_encoder = 5e-6
 
             # load data
@@ -300,6 +306,7 @@ def experiment_with_mask(conf, model, inverse, baseline=False):
 
 def main(conf):
     # general init.
+    conf.masking_scheduler_conf = None
     if conf.override:
         for name, value in config.items():
             assert type(getattr(conf, name)) == type(value), f"{name} {value}"
@@ -319,7 +326,16 @@ def main(conf):
 
     times = {}
 
+    # baseline - no mask attached to classification task
+    conf.logger.log("Baseline Performance on NLU tasks.")
+    start_bas = datetime.now()
+    results_baseline = experiment_with_mask(conf, model, inverse=False, baseline=True)
+    end_base = datetime.now()
+    conf.logger.log(f"Saving Baseline Results to Directory: results/results_{datetime.now()}")
+    save_results(results_baseline, "baseline")
+    
     for index, (key, value) in enumerate(which_layers.items()):
+
         # timing how long experiments take
         start_time = datetime.now()
 
@@ -365,9 +381,7 @@ def main(conf):
 
         # run mask experiments before finalizing logs
         conf.logger.log("Starting mask experiments.")
-        """
-
-        """
+       
         # experiment #1 - inverted mask (shut off AAVE/SAE-distinguishing features)
         conf.logger.log("[EXPERIMENT 1] Inverted mask on NLU tasks.")
         start_inverse = datetime.now()
@@ -384,25 +398,16 @@ def main(conf):
         end_transfer = datetime.now()
         save_results(results_transfer, "transfer", which_layers=key)
 
-        # experiment #3 - unpatched baseline model, no mask
-        conf.logger.log("[EXPERIMENT 3] Baseline (no mask) on NLU tasks.")
-        start_baseline = datetime.now()
-        results_baseline = experiment_with_mask(conf, model, inverse=False, baseline=True)
-        end_baseline = datetime.now()
-        save_results(results_baseline, f"baseline", which_layers=key)
-
         end_time = datetime.now()
         overall = end_time - start_time
         inverse = end_inverse - start_inverse
         aave = end_aave - start_aave
         transfer = end_transfer - start_transfer
-        baseline = end_baseline - start_baseline
         times[key] = {
             f"{key}_overall" : overall,
             f"{key}_aave" : aave,
             f"{key}_inverse": inverse,
             f"{key}_transfer": transfer,
-            f"{key}_baseline": baseline
         }
         
 
@@ -416,18 +421,21 @@ def main(conf):
         for key, value in times:
             for  key, v in value:
                 writer.writerow(key, v)
-
     # update the status.
     conf.logger.log("Finished with Experiments.")
     conf.is_finished = True
     logging.save_arguments(conf)
     os.system(f"echo {conf.checkpoint_root} >> {conf.job_id}")
 
-def save_results(res, experiment, which_layers="2-11"):
-    os.makedirs(f"results/{which_layers}", exist_ok=True)
+def save_results(res, experiment, which_layers=None):
+    if which_layers is None: 
+        path = f"results/results_{timestamp}_{experiment}.csv"
+    else: 
+        path = f"results/{which_layers}/results_{timestamp}_{experiment}.csv"
+
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     
-    with open(f"results/{which_layers}/results_{timestamp}_{experiment}.csv", mode='w', newline='') as file:
+    with open(path, mode='w', newline='') as file:
         writer = csv.writer(file)
 
         if experiment == "aave_sae":
