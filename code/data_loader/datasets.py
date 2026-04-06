@@ -30,7 +30,7 @@ class AAVEDataset(object):
         self.data_dir = data_dir
         self.trn_egs = self.get_split_examples("train")
         self.val_egs = self.get_split_examples("dev")
-        self.tst_egs = self.get_split_examples("test")
+        #self.tst_egs = self.get_split_examples("test")
 
     def get_split_examples(self, which_split):
         where_ = os.path.join(self.data_dir, "{}.tsv".format(which_split))
@@ -48,9 +48,9 @@ class AAVEDataset(object):
             for idx, line in enumerate(f):
                 line = line.strip().split("\t")
                 try:
-                    uuid, text, label = line[0], line[1], line[2]
+                    uid, text, label = line[0], line[1], line[2]
                     sentences_exs.append(
-                        SentenceExample(uuid, text, label)
+                        SentenceExample(uid, text, label)
                     )
                 except: 
                     continue
@@ -62,7 +62,7 @@ class SST2Dataset(object):
         self.data_dir = data_dir
         self.trn_egs = self.get_split_examples("train")
         self.val_egs = self.get_split_examples("dev")
-        self.tst_egs = self.get_split_examples("test")
+        #self.tst_egs = self.get_split_examples("test")
 
     def get_split_examples(self, which_split):
         where_ = os.path.join(self.data_dir, "{}.tsv".format(which_split))
@@ -81,9 +81,9 @@ class SST2Dataset(object):
                 line = line.strip().split("\t")
                 if len(line) < 3: 
                     continue
-                uid, text, label = line[0], line[1], line[2]
+                uid, text, label = idx, line[0], line[1]
                 sentence_egs.append(
-                    SentenceExample(uuid=uid, sent=text, label=label)
+                    SentenceExample(uid=uid, sent=text, label=label)
                 )
         return sentence_egs
 
@@ -95,7 +95,7 @@ class QNLIDataset(GlueDataset):
         self.data_dir = data_dir
         self.trn_egs = self.get_split_examples("train")
         self.val_egs = self.get_split_examples("dev")
-        self.tst_egs = self.get_split_examples("test")
+        #self.tst_egs = self.get_split_examples("test")
 
     def get_split_examples(self, which_split):
         where_ = os.path.join(self.data_dir, "{}.tsv".format(which_split))
@@ -131,7 +131,7 @@ class RTEDataset(GlueDataset):
         self.data_dir = data_dir
         self.trn_egs = self.get_split_examples("train")
         self.val_egs = self.get_split_examples("dev")
-        self.tst_egs = self.get_split_examples("test")
+        #self.tst_egs = self.get_split_examples("test")
 
     def get_split_examples(self, which_split):
         where_ = os.path.join(self.data_dir, "{}.tsv".format(which_split))
@@ -144,14 +144,13 @@ class RTEDataset(GlueDataset):
     def _create_examples(self, input_file, which_split):
         """ parse and convert raw string to SentencePairExample """
         sentence_pair_egs = []
+
         with open(input_file, "r") as f:
             next(f)
             for idx, line in enumerate(f):
                 segs = line.strip().split("\t")
                 assert len(segs) == 4
-                label = segs[-1]
-                text_a, text_b = segs[1], segs[2]
-                uid = "%s-%s" % (which_split, idx)
+                uid, text_a, text_b, label = line[0], line[1], line[2], line[3]
                 sentence_pair_egs.append(
                     SentencePairExample(
                         uid=uid, text_a=text_a, text_b=text_b, label=label
@@ -173,8 +172,8 @@ class MNLIDataset(GlueDataset):
         self.name = "mnli"
         self.data_dir = data_dir
         self.trn_egs = self.get_split_examples("train")
-        self.val_egs = self.get_split_examples("dev_matched")
-        self.tst_egs = self.get_split_examples("test")
+        self.val_egs =  [*self.get_split_examples("dev_matched"), *self.get_split_examples("dev_mismatched")]
+        #self.tst_egs = [*self.get_split_examples("test_matched"), *self.get_split_examples("test_mismatched")]
 
     def get_split_examples(self, which_split):
         where_ = os.path.join(self.data_dir, "{}.tsv".format(which_split))
@@ -191,9 +190,7 @@ class MNLIDataset(GlueDataset):
             next(f)
             for idx, line in enumerate(f):
                 line = line.strip().split("\t")
-                uid = "%s-%s" % (which_split, idx)
-                text_a, text_b = line[8], line[9]
-                label = line[-1]
+                uid, text_a, text_b, label = line[1], line[8], line[9], line[10]
                 sentence_pair_egs.append(
                     SentencePairExample(
                         uid=uid, text_a=text_a, text_b=text_b, label=label
@@ -212,7 +209,7 @@ class QQPDataset(GlueDataset):
         self.data_dir = data_dir
         self.trn_egs = self.get_split_examples("train")
         self.val_egs = self.get_split_examples("dev")
-        self.tst_egs = self.get_split_examples("test")
+        #self.tst_egs = self.get_split_examples("test")
 
     def get_split_examples(self, which_split):
         where_ = os.path.join(self.data_dir, "{}.tsv".format(which_split))
@@ -231,11 +228,7 @@ class QQPDataset(GlueDataset):
             next(f)
             for idx, line in enumerate(f):
                 line = line.strip().split("\t")
-                uid = "%s-%s" % (which_split, idx)
-                try:
-                    text_a, text_b, label = line[3], line[4], line[5]
-                except IndexError:  # it seems transformers also did this
-                    print(idx, line)
+                uid, text_a, text_b, label = line[0], line[3], line[4], line[5]
                 sentence_pair_egs.append(
                     SentencePairExample(
                         uid=uid, text_a=text_a, text_b=text_b, label=label
@@ -249,7 +242,7 @@ class COLADataset(GlueDataset):
         self.data_dir = data_dir
         self.trn_egs = self.get_split_examples("train")
         self.val_egs = self.get_split_examples("dev")
-        self.tst_egs = self.get_split_examples("test")
+        #self.tst_egs = self.get_split_examples("test")
 
 
     def get_split_examples(self, which_split):
@@ -267,10 +260,12 @@ class COLADataset(GlueDataset):
             next(f)
             for idx, line in enumerate(f):
                 line = line.strip().split("\t")
-                text_a, label = line[3], line[1]
-                uid = "%s-%s" % (which_split, idx)
+                if len(line) < 4: 
+                    print(line)
+                    continue
+                uid, label, _, text_a = line[0], line[1], line[2], line[3]
                 sentence_egs.append(
-                    SentenceExample(uid=uid, text_a=text_a, label=label)
+                    SentenceExample(uid=uid, sent=text_a, label=label)
                 )
         return sentence_egs
 
@@ -282,7 +277,7 @@ class WNLIDataset(GlueDataset):
         self.data_dir = data_dir
         self.trn_egs = self.get_split_examples("train")
         self.val_egs = self.get_split_examples("dev")
-        self.tst_egs = self.get_split_examples("test")
+        #self.tst_egs = self.get_split_examples("test")
 
     def get_split_examples(self, which_split):
         where_ = os.path.join(self.data_dir, "{}.tsv".format(which_split))
@@ -290,7 +285,7 @@ class WNLIDataset(GlueDataset):
         return self._create_examples(where_, which_split)
 
     def get_labels(self):
-        return ["entailment", "not_entailment"]
+        return ["0", "1"]
 
     def _create_examples(self, input_file, which_split):
         """ parse and convert raw string to SentencePairExample """
@@ -299,10 +294,7 @@ class WNLIDataset(GlueDataset):
             next(f)
             for idx, line in enumerate(f):
                 segs = line.strip().split("\t")
-                assert len(segs) == 4
-                label = segs[-1]
-                text_a, text_b = segs[1], segs[2]
-                uid = "%s-%s" % (which_split, idx)
+                uid, text_a, text_b, label = segs[0], segs[1], segs[2], segs[3]
                 sentence_pair_egs.append(
                     SentencePairExample(
                         uid=uid, text_a=text_a, text_b=text_b, label=label
@@ -318,7 +310,7 @@ class STSBDataset(GlueDataset):
         self.data_dir = data_dir
         self.trn_egs = self.get_split_examples("train")
         self.val_egs = self.get_split_examples("dev")
-        self.tst_egs = self.get_split_examples("test")
+        #self.tst_egs = self.get_split_examples("test")
 
     def get_split_examples(self, which_split):
         where_ = os.path.join(self.data_dir, "{}.tsv".format(which_split))
@@ -333,10 +325,9 @@ class STSBDataset(GlueDataset):
             next(f)
             for idx, line in enumerate(f):
                 segs = line.strip().split("\t")
-                assert len(segs) == 4
                 label = segs[-1]
-                text_a, text_b = segs[1], segs[2]
-                uid = "%s-%s" % (which_split, idx)
+                text_a, text_b = segs[7], segs[8]
+                uid = idx
                 sentence_pair_egs.append(
                     SentencePairExample(
                         uid=uid, text_a=text_a, text_b=text_b, label=label

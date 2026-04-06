@@ -93,7 +93,7 @@ class BertFinetuner(BaseTrainer):
                         hook_container.on_validation_end(eval_res=eval_res)
 
                 with self.timer("load_data", epoch=self._epoch_step):
-                    uids, golds, inputs, _ = self.batch_to_device(batched)
+                    uids, golds, inputs, _ = seqcls_batch_to_device(batched)
 
                 # forward for "pretrained model+classifier".
                 with self.timer("forward_pass", epoch=self._epoch_step):
@@ -104,7 +104,6 @@ class BertFinetuner(BaseTrainer):
                         logits = output.logits
                     # logits, *_ = self._model_forward(**inputs)
                     # the cross entropy by default uses reduction='mean'
-
                     loss = self.criterion(logits, golds)
 
                 # backward for "pretrained model+classifier".
@@ -177,6 +176,8 @@ class BertFinetuner(BaseTrainer):
                     )
                     self.logger.save_json()
                     hook_container.on_train_end()
+                    # testing once on model end training
+                    #self.evaluate(eval_name="tst_dl")
                     return
 
                 # display the timer info.
@@ -191,19 +192,19 @@ class BertFinetuner(BaseTrainer):
             self.logger.save_json()
             torch.cuda.empty_cache()
         hook_container.on_train_end()
+        # testing once on model end training
+        #self.evaluate(eval_name="tst_dl")
         return results
 
-    def evaluate(self):
+    def evaluate(self, eval_name = "val_dl"):
         self.model.eval()
         eval_res = {}
         message = ""
         with torch.no_grad():
-            for eval_name in ("val_dl", "tst_dl"):
                 eval_dl = getattr(self, eval_name)
                 if not eval_dl:
                     message += f" skip evaluation on {eval_name}."
                     eval_res[eval_name] = None
-                    continue
                 message += f" finished evaluation on {eval_name}."
                 all_losses, all_golds, all_preds = [], [], []
                 all_bounds = []
@@ -269,21 +270,21 @@ class BertFinetuner(BaseTrainer):
                         f"[INFO] Eval results on {eval_name} @ batch_step {self._batch_step},"
                         f"{m_name}: {m_score:.4f}."
                     )
-            # save results, bounds in json to be called later        
-            self.results[f"results_{self.batch_step}"] = eval_res
-            self.bounds[f"bounds_{self._batch_step}"] = {
+        # save results, bounds in json to be called later        
+        self.results[f"results_{self.batch_step}"] = eval_res
+        self.bounds[f"bounds_{self._batch_step}"] = {
                 split: {"ci_lower": eval_res[split]["ci_lower"], 
                         "ci_upper": eval_res[split]["ci_upper"]}
                 for split in ("val_dl", "tst_dl") 
                 if eval_res.get(split) is not None
             }
-            self.log_fn(
+        self.log_fn(
                 f"[INFO] 95% CI @ batch_step {self._batch_step}: "
                 f"val [{eval_res.get('val_dl', {}).get('ci_lower', 'N/A'):.3f}, "
                 f"{eval_res.get('val_dl', {}).get('ci_upper', 'N/A'):.3f}]"
             )
-        
-        self.model.train()
+        if eval_name == "val_dl":
+            self.model.train()
         
 
     def _model_forward(self, **kwargs):

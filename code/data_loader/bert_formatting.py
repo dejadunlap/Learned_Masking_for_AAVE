@@ -173,11 +173,6 @@ def glue_example_to_feature(
         )
     return features
 
-
-# for POS, the long sentences are few -- when setting msl=128:
-# 
-
-
 """ for POS tagging on PTB, I use the last wordpiece to represent the word """
 class TaggingBertInputFeature(BertInputFeature):
     def __init__(self, uid, input_ids, attention_mask, sent_if_tgt, tags_ids):

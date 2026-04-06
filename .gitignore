@@ -4,3 +4,7 @@ path/
 **cached**
 **checkpoint**
 **pretrained_weights**
+data/
+old_data/
+old_results/
+value/

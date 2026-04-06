@@ -19,46 +19,49 @@ import masking.sparsity_control as sp_control
 import utils.checkpoint as checkpoint
 import utils.logging as logging
 import utils.param_parser as param_parser
+from data_loader import SeqClsDataIter
+
 
 config = dict(
     ptl="bert",
     model="bert-base-uncased",
-    task="aave_mask",
+    task="mrpc",
     model_scheme="vector_cls_sentence",
     experiment="debug",
     max_seq_len=128,
-    lr=1e-3,
+    lr=5e-4,
     world="0",
-    batch_size=32,
-    eval_every_batch=60,
+    batch_size=16,
+    eval_every_batch=100,
     num_epochs=10,
-    do_BL=True,
-    do_MS=False,
+    do_BL=False,
+    do_MS=True,
     ptl_req_grad=False,
     classifier_req_grad=False,
-    mask_classifier=False,
-    mask_ptl=False,
-    layers_to_mask=None,
+    mask_classifier=True,
+    mask_ptl=True,
+    layers_to_mask="2,3,4,5,6,7,8,9,10,11",
     train_fast=True,
     num_snapshots=10,
-    masking_scheduler_conf="",
-    checkpoint="./data/cached/",
+    masking_scheduler_conf="lambdas_lr=0,sparsity_warmup=automated_gradual_sparsity,final_sparsity=0.05,sparsity_warmup_interval_epoch=0.1,init_epoch=0,final_epoch=1",
 )
 
 
 def init_task(conf):
     tokenizer = BertTokenizer.from_pretrained(conf.model)
-    data_iter = task_configs.task2dataiter[conf.task](conf.task, conf.model, tokenizer, conf.max_seq_len)
+    data_iter = SeqClsDataIter(conf.task, conf.model, tokenizer, conf.max_seq_len)
     conf.logger.log(f"Creating and loading pretrained {conf.ptl.upper()} model.")
 
-    num_labels = 1 if "stsb" in conf.task else 2
+    num_labels = len(data_iter.pdata.get_labels())
+    labels = data_iter.pdata.name
+
     model = BertForSequenceClassification.from_pretrained(
         conf.model,
         num_labels=num_labels,
         cache_dir=conf.pretrained_weight_path,
     )
 
-    # accomodatign linear regression for stsb task
+    # accomodating linear regression for stsb task
     if "stsb" in conf.task:
         model.classifier = torch.nn.Linear(model.config.hidden_size, 1)
 
@@ -238,20 +241,12 @@ def experiment_with_mask(conf, model, inverse, baseline=False):
         conf.logger.log(f"[INFO] Total masked tensors found and frozen: {masked_count}")
         if masked_count == 0:
             conf.logger.log("[WARN] No masked tensors found — check maskers.py for attribute name")
-    else:
-        # baseline has no masks — leave everything trainable
-        _model = BertForSequenceClassification.from_pretrained(
-            _conf.model,
-            num_labels=2,
-            cache_dir=conf.pretrained_weight_path,
-        )
 
     # move to cpu to save on space
-    _model = _model.cpu()
+    if _model is not None:
+        _model = _model.cpu()
+    
     tokenizer = BertTokenizer.from_pretrained(_conf.model)
-
-    # making sure we are letting the classifier update w/o masks
-    _model.classifier = maskers.MaskedLinear0(weight=_model.classifier.weight, bias=_model.classifier.bias,)
 
     results = {}
     for task in ["cola", "mnli", "qnli", "qqp", "rte", "sst2", "stsb", "wnli"]:
@@ -263,23 +258,58 @@ def experiment_with_mask(conf, model, inverse, baseline=False):
             _conf.task = task_name
             _conf.drop_rate = 0.1
             _conf.weight_decay = 0.01
-            _conf.max_seq_len = 512 if task in ["boolQ", "multirc"] else 128
-            _conf.eval_every_batch = 10
+            _conf.max_seq_len = 128
             _conf.batch_size = 16
             _conf.lr = 5e-4 
-            _conf.lr_encoder = 5e-6
 
-            # load data
+            # Load data iterator to get num_labels BEFORE creating model
             data_iter_cls = task_configs.task2dataiter[task_name]
             task_data_iter = data_iter_cls(
                 task_name, _conf.model, tokenizer, _conf.max_seq_len
             )
- 
-            # unfreeze everything except masks
-            for name, param in _model.named_parameters():
+            num_labels = task_data_iter.num_labels
+
+            # Create/reinitialize model with correct num_labels for this task
+            task_model = BertForSequenceClassification.from_pretrained(
+                _conf.model,
+                num_labels=num_labels,
+                cache_dir=conf.pretrained_weight_path,
+            )
+            
+            # Handle STSB regression
+            if "stsb" in task_name:
+                task_model.classifier = torch.nn.Linear(task_model.config.hidden_size, 1)
+
+            # If we have a baseline or learned mask, transfer it to this task's model
+            if not baseline and _model is not None:
+                masked_count = 0
+                for name, module in task_model.named_modules():
+                    # Find corresponding module in _model and copy mask
+                    try:
+                        source_module = dict(_model.named_modules())[name]
+                        for mask_attr in ['mask', 'weight_mask', 'bias_mask']:
+                            if hasattr(source_module, mask_attr):
+                                source_mask = getattr(source_module, mask_attr)
+                                if isinstance(source_mask, torch.Tensor):
+                                    setattr(module, mask_attr, source_mask.clone().detach())
+                                    getattr(module, mask_attr).requires_grad = False
+                                    masked_count += 1
+                    except KeyError:
+                        pass
+                
+                conf.logger.log(f"[INFO] Transferred {masked_count} masks to {task_name} model")
+
+            # Replace classifier with masked version
+            task_model.classifier = maskers.MaskedLinear0(
+                weight=task_model.classifier.weight, 
+                bias=task_model.classifier.bias,
+            )
+
+            # Unfreeze encoder (except frozen masks)
+            for name, param in task_model.named_parameters():
                 if "mask" not in name:
                     param.requires_grad = True
-            
+
             _conf.checkpoint_root = os.path.join(
                 conf.checkpoint_root,
                 f"{'baseline' if baseline else ('inv' if inverse else 'learned')}_mask",
@@ -289,17 +319,19 @@ def experiment_with_mask(conf, model, inverse, baseline=False):
 
             recorder_hooks = init_recorders(_conf, masker=None)
             trainer = BertFinetuner(_conf, logger=_conf.logger, data_iter=task_data_iter)
-            trainer.train(model=_model, masker=None, hooks=recorder_hooks)
+            trainer.train(model=task_model, masker=None, hooks=recorder_hooks)
             results[task_name] = trainer.results
 
-            # pull back to CPU and clear GPU between tasks
-            _model = _model.cpu()
+            # Clean up between tasks
+            task_model = task_model.cpu()
             del trainer
             del task_data_iter
             del recorder_hooks
+            del task_model
             torch.cuda.empty_cache()
 
-    del _model
+    if _model is not None:
+        del _model
     torch.cuda.empty_cache()
     return results
     
@@ -313,34 +345,51 @@ def main(conf):
             setattr(conf, name, value)
     init_config(conf)
 
+    # tracking timing of each experiment to see which (if any) more efficient
+    times = {}
+
+    # init the baseline task.
+    conf.do_BL = True
+    conf.do_MS = False
+    conf.ptl_req_grad = True
+    conf.mask_classifier = False
+
+    model, data_iter = init_task(conf)
+    """
+
+    # baseline - no mask attached to NLU tasks
+    conf.logger.log("Baseline Performance on NLU tasks.")
+    start_base = datetime.now()
+    results_baseline = experiment_with_mask(conf, model, inverse=False, baseline=True)
+    end_base = datetime.now()
+    conf.logger.log(f"Saving Baseline Results to Directory: results/results_{datetime.now()}")
+    save_results(results_baseline, "baseline")
+    diff_base = end_base - start_base
+    times["baseline"] = diff_base
+
     # experiementing with messing with which layers are masked
+    
     which_layers = {
         "2-11": "2,3,4,5,6,7,8,9,10,11",
         "2-4": "2,3,4",
         "5-8": "5,6,7,8",
         "9-11": "9,10,11"
     }
-    which_layers = {
-        "9-11": "9,10,11"
-    }
-
-    times = {}
-
-    # baseline - no mask attached to classification task
-    conf.logger.log("Baseline Performance on NLU tasks.")
-    start_bas = datetime.now()
-    results_baseline = experiment_with_mask(conf, model, inverse=False, baseline=True)
-    end_base = datetime.now()
-    conf.logger.log(f"Saving Baseline Results to Directory: results/results_{datetime.now()}")
-    save_results(results_baseline, "baseline")
+    """
     
-    for index, (key, value) in enumerate(which_layers.items()):
+    which_layers = {
+        "2-11": "2,3,4,5,6,7,8,9,10,11",
+    }
+    for key, value in which_layers.items():
 
         # timing how long experiments take
         start_time = datetime.now()
 
         # experiment with how we chose which layers to mask to see how that effects performance
         conf.layers_to_mask = value
+        conf.do_BL = False
+        conf.do_MS = True
+        conf.ptl_req_grad = False
 
         # should always start with aave/sae classification task
         conf.task = "aave_mask"
@@ -371,7 +420,7 @@ def main(conf):
         conf.logger.log(f"Saving AAVE/SAE Classification Results: results/results_aave_{datetime.now()}")
         save_results(aave_sae_results, "aave_sae", which_layers=key)
         
-        # load best checkpoint so experiments use best model, not last step
+        # load best checkpoint so experiments use best model, not last step (COME BACK HERE EVENTUALLY)
         best_state_path = os.path.join(conf.checkpoint_root, "best_state")
         if os.path.exists(best_state_path):
             conf.logger.log("[INFO] Loading best checkpoint for mask experiments.")
@@ -379,7 +428,7 @@ def main(conf):
         else:
             conf.logger.log("[WARN] No best checkpoint found, using final training state.")
 
-        # run mask experiments before finalizing logs
+        # run mask experiments
         conf.logger.log("Starting mask experiments.")
        
         # experiment #1 - inverted mask (shut off AAVE/SAE-distinguishing features)
@@ -391,7 +440,7 @@ def main(conf):
         conf.logger.log(f"Saving Experimental Results to Directory: results/results_{datetime.now()}")
         save_results(results_inverse, "inverse", which_layers=key)
 
-        # experiment #2 - learned mask applied to NLU tasks (do features transfer?)
+        # experiment #2 - learned mask applied to NLU tasks (do representations transfer?)
         conf.logger.log("[EXPERIMENT 2] Learned mask on NLU tasks.")
         start_transfer = datetime.now()
         results_transfer = experiment_with_mask(conf, model, inverse=False)
