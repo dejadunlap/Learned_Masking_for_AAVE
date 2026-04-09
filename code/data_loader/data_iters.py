@@ -12,7 +12,9 @@ import json
 import uuid
 
 task2datadir = {
-    "aave_mask": "data/aave_data",
+    "aave_mask": "data/VALUE/CoLA",
+    "sae_mask": "data/GLUE/GLUE/CoLA",
+    "sae_aave_mask": ["data/GLUE/GLUE/CoLA", "data/VALUE/CoLA"],
     "cola_aave": "data/VALUE/CoLA",
     "mnli_aave": "data/VALUE/MNLI",
     "qnli_aave": "data/VALUE/QNLI",
@@ -21,18 +23,20 @@ task2datadir = {
     "sst2_aave": "data/VALUE/SST-2",
     "stsb_aave": "data/VALUE/STS-B",
     "wnli_aave": "data/VALUE/WNLI",
-    "cola_sae": "data/GLUE/CoLA",
-    "mnli_sae": "data/GLUE/MNLI",
-    "qnli_sae": "data/GLUE/QNLI",
-    "qqp_sae": "data/GLUE/QQP",
-    "rte_sae": "data/GLUE/RTE",
-    "sst2_sae": "data/GLUE/SST-2",
-    "stsb_sae": "data/GLUE/STS-B",
-    "wnli_sae": "data/GLUE/WNLI",
+    "cola_sae": "data/GLUE/GLUE/CoLA",
+    "mnli_sae": "data/GLUE/GLUE/MNLI",
+    "qnli_sae": "data/GLUE/GLUE/QNLI",
+    "qqp_sae": "data/GLUE/GLUE/QQP",
+    "rte_sae": "data/GLUE/GLUE/RTE",
+    "sst2_sae": "data/GLUE/GLUE/SST-2",
+    "stsb_sae": "data/GLUE/GLUE/STS-B",
+    "wnli_sae": "data/GLUE/GLUE/WNLI",
 }
 
 task2dataset = {
-    "aave_mask": AAVEDataset,
+    "aave_mask": COLADataset,
+    "sae_mask": COLADataset,
+    "sae_aave_mask": COLADataset,
     "sst2_aave": SST2Dataset,
     "cola_aave": COLADataset,
     "mnli_aave": MNLIDataset,
@@ -53,7 +57,9 @@ task2dataset = {
 
 
 task2metrics = {
-    "aave_mask" : ["accuracy"],
+    "aave_mask" : ["mcc"],
+    "sae_mask" : ["mcc"],
+    "sae_aave_mask" : ["mcc"],
     "sst2_aave": ["accuracy"],
     "mnli_aave": ["accuracy"],
     "qqp_aave": ["f1", "accuracy"],

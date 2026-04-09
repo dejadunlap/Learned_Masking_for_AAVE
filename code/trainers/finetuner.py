@@ -31,17 +31,58 @@ def seqcls_batch_to_device(batched):
         token_type_ids
     )
 
-def bootstrap_ci(preds, golds, n_bootstrap=1000, ci=95):
-    preds = preds.detach().cpu().numpy() 
-    golds = golds.detach().cpu().numpy() 
+import numpy as np
+from sklearn.utils import resample
+from sklearn.metrics import matthews_corrcoef
+
+
+def bootstrap_ci(preds, golds, n_bootstrap=1000, ci=95, metric="accuracy"):
+    """
+    Compute bootstrap confidence intervals for classification metrics.
+    
+    Args:
+        preds: predictions (1-D array/tensor of class indices)
+        golds: gold labels (1-D array/tensor of class indices)
+        n_bootstrap: number of bootstrap samples
+        ci: confidence interval percentage (default 95)
+        metric: "accuracy" or "mcc" (Matthews Correlation Coefficient)
+    
+    Returns:
+        lower, upper: confidence interval bounds
+    """
+    preds = preds.detach().cpu().numpy() if hasattr(preds, 'detach') else np.array(preds)
+    golds = golds.detach().cpu().numpy() if hasattr(golds, 'detach') else np.array(golds)
+    
+    # Ensure 1-D arrays
+    preds = preds.flatten()
+    golds = golds.flatten()
+    
     scores = []
+    
     for _ in range(n_bootstrap):
-        idx = resample(range(len(preds)), replace=True)
-        p = [preds[i] for i in idx]
-        g = [golds[i] for i in idx]
-        scores.append(sum(pi == gi for pi, gi in zip(p, g)) / len(p))
+        # Resample with replacement
+        idx = resample(range(len(preds)), replace=True, n_samples=len(preds))
+        p = preds[idx]
+        g = golds[idx]
+        
+        # Compute metric on resampled data
+        if metric.lower() == "accuracy":
+            score = np.mean(p == g)
+        elif metric.lower() == "mcc":
+            # MCC requires at least 2 unique labels
+            if len(np.unique(g)) < 2:
+                score = 0.0
+            else:
+                score = matthews_corrcoef(g, p)
+        else:
+            raise ValueError(f"Unknown metric: {metric}. Use 'accuracy' or 'mcc'.")
+        
+        scores.append(score)
+    
+    # Compute percentiles
     lower = np.percentile(scores, (100 - ci) / 2)
     upper = np.percentile(scores, 100 - (100 - ci) / 2)
+    
     return lower, upper
 
 class BertFinetuner(BaseTrainer):
@@ -213,11 +254,8 @@ class BertFinetuner(BaseTrainer):
                     # golds is used for compute loss, _golds used for i2t convertion
                     uids, golds, batched, _golds = self.batch_to_device(batched)
                     with torch.no_grad():
-                        if self.conf.model_scheme == "postagging":
-                            logits, bert_out, *_ = self._model_forward(**batched)
-                        else:
-                            output = self._model_forward(**batched)
-                            logits = output.logits
+                        output = self._model_forward(**batched)
+                        logits = output.logits
                         loss = self.criterion(logits, golds).mean().item()
                         preds = torch.argmax(logits, dim=-1, keepdim=False)
                         all_losses.append(loss)
@@ -227,64 +265,66 @@ class BertFinetuner(BaseTrainer):
                 # returning upper, lower bounds for the predictions due to smaller datasets
                 all_preds_tensor = torch.tensor(all_preds)
                 all_golds_tensor = torch.tensor(all_golds)
-                lower, upper = bootstrap_ci(all_preds_tensor, all_golds_tensor)
                     
                 eval_res[eval_name] = {}
                 for task_metric in self.task_metrics:
                     eval_fn = getattr(eval_meters, task_metric)
-                    if len(all_golds_ner) == 0:
-                        eval_res[eval_name][task_metric] = eval_fn(all_preds, all_golds)
-                        self.log_fn(
-                            f"[INFO]: gold distribution on {eval_name}: {Counter(all_golds)}"
-                        )
-                    else:
-                        eval_res[eval_name][task_metric] = eval_fn(
-                            all_preds_ner, all_golds_ner
-                        )
+                    
+                    # Compute metric
+                    metric_score = eval_fn(all_preds, all_golds)
+                    eval_res[eval_name][task_metric] = metric_score
+                    
+                    # Compute CI for this specific metric
+                    ci_lower, ci_upper = bootstrap_ci(
+                        all_preds_tensor, 
+                        all_golds_tensor, 
+                        metric=task_metric
+                    )
+                    eval_res[eval_name][f"ci_lower_{task_metric}"] = ci_lower
+                    eval_res[eval_name][f"ci_upper_{task_metric}"] = ci_upper
                 
-                eval_res[eval_name]["ci_lower"] = lower
-                eval_res[eval_name]["ci_upper"] = upper
-
-                # logging.
+                self.results[f"results_{self.batch_step}"] = eval_res
+                # ========== STRUCTURED LOGGING ==========
                 self.log_fn(f"[INFO] Finished evaluation: {message}")
+                
+                # Summary JSON with all metrics and CIs
+                summary_log = {
+                    "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "step": self._batch_step,
+                    "epoch": self._epoch_step,
+                    "avg_loss": np.mean(all_losses),
+                    "split": eval_name,
+                }
+                
+                # Add each metric with its CI
+                for metric_name in self.task_metrics:
+                    summary_log[f"{metric_name}"] = eval_res[eval_name][metric_name]
+                    summary_log[f"ci_lower_{metric_name}"] = eval_res[eval_name][f"ci_lower_{metric_name}"]
+                    summary_log[f"ci_upper_{metric_name}"] = eval_res[eval_name][f"ci_upper_{metric_name}"]
+                
                 self.log_fn_json(
                     name="evaluation",
-                    values={
-                        "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-                        "step": self._batch_step,
-                        "epoch": self._epoch_step,
-                        "loss": loss,
-                        "ci_lower": lower,
-                        "ci_upper": upper,
-                        **eval_res[eval_name],
-                    },
+                    values=summary_log,
                     tags={"split": eval_name},
                     display=True,
                 )
+                
+                # ========== DETAILED LOGGING PER METRIC ==========
                 self.log_fn(
                     f"[INFO] Eval results on {eval_name} @ batch_step {self._batch_step}, "
-                    f"avg loss: {np.mean(all_losses)}."
+                    f"avg loss: {np.mean(all_losses):.4f}"
                 )
-                for m_name, m_score in eval_res[eval_name].items():
+                
+                for metric_name in self.task_metrics:
+                    score = eval_res[eval_name][metric_name]
+                    ci_lower = eval_res[eval_name][f"ci_lower_{metric_name}"]
+                    ci_upper = eval_res[eval_name][f"ci_upper_{metric_name}"]
+                    
                     self.log_fn(
-                        f"[INFO] Eval results on {eval_name} @ batch_step {self._batch_step},"
-                        f"{m_name}: {m_score:.4f}."
+                        f"[INFO] Eval on {eval_name} @ step {self._batch_step}: "
+                        f"{metric_name}: {score:.4f} "
+                        f"[95% CI: {ci_lower:.4f} - {ci_upper:.4f}]"
                     )
-        # save results, bounds in json to be called later        
-        self.results[f"results_{self.batch_step}"] = eval_res
-        self.bounds[f"bounds_{self._batch_step}"] = {
-                split: {"ci_lower": eval_res[split]["ci_lower"], 
-                        "ci_upper": eval_res[split]["ci_upper"]}
-                for split in ("val_dl", "tst_dl") 
-                if eval_res.get(split) is not None
-            }
-        self.log_fn(
-                f"[INFO] 95% CI @ batch_step {self._batch_step}: "
-                f"val [{eval_res.get('val_dl', {}).get('ci_lower', 'N/A'):.3f}, "
-                f"{eval_res.get('val_dl', {}).get('ci_upper', 'N/A'):.3f}]"
-            )
-        if eval_name == "val_dl":
-            self.model.train()
         
 
     def _model_forward(self, **kwargs):

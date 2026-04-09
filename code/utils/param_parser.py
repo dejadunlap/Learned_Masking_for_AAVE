@@ -12,7 +12,9 @@ def str2bool(v):
 
 def dict_parser(values):
     local_dict = {}
-    for kv in values.split(","):
+    values = values[0]
+    values = values.split(",")
+    for kv in values:
         k, v = kv.split("=")
         try:
             local_dict[k] = float(v)

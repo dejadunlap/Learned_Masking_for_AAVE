@@ -30,7 +30,6 @@ config = dict(
     experiment="debug",
     max_seq_len=128,
     lr=5e-4,
-    world="0",
     batch_size=16,
     eval_every_batch=100,
     num_epochs=10,
@@ -249,7 +248,7 @@ def experiment_with_mask(conf, model, inverse, baseline=False):
     tokenizer = BertTokenizer.from_pretrained(_conf.model)
 
     results = {}
-    for task in ["cola", "rte", "sst2", "qnli", "mnli"]:
+    for task in ["cola", "rte", "sst2", "mnli", "wnli"]:
         for dialect in ["sae", "aave"]:
             task_name = f"{task}_{dialect}"
             conf.logger.log(f"[INFO] Evaluating inverse={inverse} mask on {task_name}, baseline={baseline}")
@@ -336,17 +335,7 @@ def experiment_with_mask(conf, model, inverse, baseline=False):
     
 
 def main(conf):
-    # general init.
-    conf.masking_scheduler_conf = None
-    if conf.override:
-        for name, value in config.items():
-            assert type(getattr(conf, name)) == type(value), f"{name} {value}"
-            setattr(conf, name, value)
-    init_config(conf)
-
-    # tracking timing of each experiment to see which (if any) more efficient
-    times = {}
-
+    """
     # init the baseline task.
     conf.do_BL = True
     conf.do_MS = False
@@ -355,44 +344,31 @@ def main(conf):
 
     model, data_iter = init_task(conf)
     
-
+    
     # baseline - no mask attached to NLU tasks
     conf.logger.log("Baseline Performance on NLU tasks.")
-    start_base = datetime.now()
     results_baseline = experiment_with_mask(conf, model, inverse=False, baseline=True)
-    end_base = datetime.now()
     conf.logger.log(f"Saving Baseline Results to Directory: results/results_{datetime.now()}")
-    save_results(results_baseline, "baseline")
-    diff_base = end_base - start_base
-    times["baseline"] = diff_base
-
-    # experiementing with messing with which layers are masked
-    which_layers = {
-        "2-11": "2,3,4,5,6,7,8,9,10,11",
-        "2-4": "2,3,4",
-        "5-8": "5,6,7,8",
-        "9-11": "9,10,11"
-    }
+    save_results(results_baseline, "baseline", folder="baseline")
     """
     
-    which_layers = {
-        "2-11": "2,3,4,5,6,7,8,9,10,11",
-    }
-    for key, value in which_layers.items():
+    for mask_task in ["aave_mask", "sae_mask", "sae_aave_mask"]:
 
-        # timing how long experiments take
-        start_time = datetime.now()
-
-        # experiment with how we chose which layers to mask to see how that effects performance
-        conf.layers_to_mask = value
+        # setting configs for masking experiments
         conf.do_BL = False
         conf.do_MS = True
         conf.lr = 2e-5
         conf.lr_encoder = 5e-5
         conf.ptl_req_grad = False
+        conf.layers_to_mask="2,3,4,5,6,7,8,9,10,11"
+        conf.masking_scheduler_conf="lambdas_lr=0,sparsity_warmup=automated_gradual_sparsity,final_sparsity=0.05,sparsity_warmup_interval_epoch=0.1,init_epoch=0,final_epoch=1",
 
-        # should always start with aave/sae classification task
-        conf.task = "aave_mask"
+
+        # first train with masking experiment
+        conf.task = mask_task
+
+        #init configuration
+        init_config(conf)
 
         # init the task.
         model, data_iter = init_task(conf)
@@ -408,17 +384,14 @@ def main(conf):
         trainer = BertFinetuner(conf, logger=conf.logger, data_iter=data_iter)
 
         # training/tuning aave/sae classification task.
-        conf.logger.log("Starting training/validation for AAVE/SAE Classification.")
-        start_aave = datetime.now()
+        conf.logger.log(f"Starting training/validation for {mask_task}")
         trainer.train(model, masker, hooks=recorder_hooks)
-        end_aave = datetime.now()
 
         # saving results
         conf.logger.log("Finishing training/validation for SAE/AAVE Classification")
-        aave_sae_results = trainer.results
-        conf.logger.log(f"Results from AAVE-SAE Classification task: {aave_sae_results}")
-        conf.logger.log(f"Saving AAVE/SAE Classification Results: results/results_aave_{datetime.now()}")
-        save_results(aave_sae_results, "aave_sae", which_layers=key)
+        mask_results = trainer.results
+        conf.logger.log(f"Results from SAE Masking task: {mask_results}")
+        save_results(mask_results, mask_task, folder=mask_task)
         
         # load best checkpoint so experiments use best model, not last step (COME BACK HERE EVENTUALLY)
         best_state_path = os.path.join(conf.checkpoint_root, "best_state")
@@ -431,134 +404,138 @@ def main(conf):
         # run mask experiments
         conf.logger.log("Starting mask experiments.")
        
-        # experiment #1 - inverted mask (shut off AAVE/SAE-distinguishing features)
+        # experiment #1 - inverted mask (shut off representational features)
         conf.logger.log("[EXPERIMENT 1] Inverted mask on NLU tasks.")
-        start_inverse = datetime.now()
         results_inverse = experiment_with_mask(conf, model, inverse=True)
-        end_inverse = datetime.now()
         conf.logger.log(f"results from inverted experiments {results_inverse}")
         conf.logger.log(f"Saving Experimental Results to Directory: results/results_{datetime.now()}")
-        save_results(results_inverse, "inverse", which_layers=key)
+        save_results(results_inverse, "inverse", folder = mask_task)
 
         # experiment #2 - learned mask applied to NLU tasks (do representations transfer?)
         conf.logger.log("[EXPERIMENT 2] Learned mask on NLU tasks.")
-        start_transfer = datetime.now()
         results_transfer = experiment_with_mask(conf, model, inverse=False)
-        end_transfer = datetime.now()
-        save_results(results_transfer, "transfer", which_layers=key)
+        save_results(results_transfer, "transfer", folder = mask_task)       
 
-        end_time = datetime.now()
-        overall = end_time - start_time
-        inverse = end_inverse - start_inverse
-        aave = end_aave - start_aave
-        transfer = end_transfer - start_transfer
-        times[key] = {
-            f"{key}_overall" : overall,
-            f"{key}_aave" : aave,
-            f"{key}_inverse": inverse,
-            f"{key}_transfer": transfer,
-        }
-        
-
-    # saving the times from the experiements
-    conf.logger.log(f"Times for the Experiments {times}")
-    with open(f"results/times.csv_{datetime.now()}", "w+") as f: 
-        writer = csv.writerow(f)
-        header = ["Task", "Time Elapsed"]
-
-        writer.writerow(header)
-        for key, value in times:
-            for  key, v in value:
-                writer.writerow(key, v)
     # update the status.
     conf.logger.log("Finished with Experiments.")
     conf.is_finished = True
     logging.save_arguments(conf)
     os.system(f"echo {conf.checkpoint_root} >> {conf.job_id}")
+    
+    
+
+def save_results(res, experiment, folder=""):
     """
-
-def save_results(res, experiment, which_layers=None):
+    Save experiment results to CSV with per-metric CI columns.
+    
+    Accommodates new formatting where each metric has ci_lower_{metric} and ci_upper_{metric} columns.
+    
+    Args:
+        res: Results dict from trainer.results (structure: {step_key: {split: {metric: score, ci_lower_metric: val, ...}}})
+        experiment: Experiment name (e.g., "aave_sae", or task name like "boolq")
+        folder: Output folder path
+        which_layers: Deprecated (kept for backward compatibility)
+    
+    Example structure of res:
+        {
+            "results_1200": {
+                "val_dl": {
+                    "accuracy": 0.85,
+                    "ci_lower_accuracy": 0.82,
+                    "ci_upper_accuracy": 0.88,
+                    "mcc": 0.75,
+                    "ci_lower_mcc": 0.71,
+                    "ci_upper_mcc": 0.79,
+                },
+                "tst_dl": { ... }
+            },
+            "results_2400": { ... }
+        }
+    """
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-    if which_layers is None: 
-        path = f"results/results_{timestamp}_{experiment}.csv"
-    else: 
-        path = f"results/{which_layers}/results_{timestamp}_{experiment}.csv"
-
-    
-    
+    path = f"results/{folder}/results_{timestamp}_{experiment}.csv"
+ 
     with open(path, mode='w', newline='') as file:
         writer = csv.writer(file)
-
-        if experiment == "aave_sae":
-            writer.writerow(["Batch", "Val Accuracy", "Val CI Lower", "Val CI Upper", 
-                             "Test Accuracy", "Test CI Lower", "Test CI Upper"])
+ 
+        if "mask" in experiment:
+            # Extract metric names from first result entry
+            first_val = next(iter(res.values())).get("val_dl", {})
+            metrics = [k for k in first_val.keys() if not k.startswith("ci_")]
+            
+            # Build header dynamically
+            header = ["Batch"]
+            for metric in metrics:
+                header.extend([f"Val {metric.capitalize()}", f"Val CI Lower {metric}", f"Val CI Upper {metric}"])
+            for metric in metrics:
+                header.extend([f"Test {metric.capitalize()}", f"Test CI Lower {metric}", f"Test CI Upper {metric}"])
+            writer.writerow(header)
+            
+            # Write data rows
             for key, value in res.items():
                 batch = int(key.split("_")[1])
                 val = value.get("val_dl", {}) or {}
                 tst = value.get("tst_dl", {}) or {}
-                writer.writerow([
-                    batch,
-                    val.get("accuracy", ""),
-                    val.get("ci_lower", ""),
-                    val.get("ci_upper", ""),
-                    tst.get("accuracy", ""),
-                    tst.get("ci_lower", ""),
-                    tst.get("ci_upper", ""),
-                ])
-
+                
+                row = [batch]
+                for metric in metrics:
+                    row.extend([
+                        val.get(metric, ""),
+                        val.get(f"ci_lower_{metric}", ""),
+                        val.get(f"ci_upper_{metric}", ""),
+                    ])
+                for metric in metrics:
+                    row.extend([
+                        tst.get(metric, ""),
+                        tst.get(f"ci_lower_{metric}", ""),
+                        tst.get(f"ci_upper_{metric}", ""),
+                    ])
+                writer.writerow(row)
+ 
         else:
             for task, task_data in res.items():
-                # write task header row
+                # Write task header row
                 writer.writerow([task])
-
-                is_multirc = "multirc" in task
-                if is_multirc:
-                    writer.writerow([
-                        "Batch",
-                        "Val Accuracy", "Val F1", "Val CI Lower", "Val CI Upper",
-                        "Test Accuracy", "Test F1", "Test CI Lower", "Test CI Upper"
-                    ])
-                else:
-                    writer.writerow([
-                        "Batch",
-                        "Val Accuracy", "Val CI Lower", "Val CI Upper",
-                        "Test Accuracy", "Test CI Lower", "Test CI Upper"
-                    ])
-
+ 
+                # Extract metric names from first result entry
+                first_result = next(iter(task_data.values())) if task_data else {}
+                first_val = first_result.get("val_dl", {})
+                metrics = [k for k in first_val.keys() if not k.startswith("ci_")]
+                
+                # Build header dynamically
+                header = ["Batch"]
+                for metric in metrics:
+                    header.extend([f"Val {metric.capitalize()}", f"Val CI Lower {metric}", f"Val CI Upper {metric}"])
+                for metric in metrics:
+                    header.extend([f"Test {metric.capitalize()}", f"Test CI Lower {metric}", f"Test CI Upper {metric}"])
+                writer.writerow(header)
+ 
+                # Write data rows
                 for key, value in task_data.items():
                     try:
                         batch = int(key.split("_")[1])
                     except (IndexError, ValueError):
                         continue
-
+ 
                     val = value.get("val_dl", {}) or {}
                     tst = value.get("tst_dl", {}) or {}
-
-                    if is_multirc:
-                        writer.writerow([
-                            batch,
-                            val.get("accuracy", ""),
-                            val.get("f1", ""),
-                            val.get("ci_lower", ""),
-                            val.get("ci_upper", ""),
-                            tst.get("accuracy", ""),
-                            tst.get("f1", ""),
-                            tst.get("ci_lower", ""),
-                            tst.get("ci_upper", ""),
+ 
+                    row = [batch]
+                    for metric in metrics:
+                        row.extend([
+                            val.get(metric, ""),
+                            val.get(f"ci_lower_{metric}", ""),
+                            val.get(f"ci_upper_{metric}", ""),
                         ])
-                    else:
-                        writer.writerow([
-                            batch,
-                            val.get("accuracy", ""),
-                            val.get("ci_lower", ""),
-                            val.get("ci_upper", ""),
-                            tst.get("accuracy", ""),
-                            tst.get("ci_lower", ""),
-                            tst.get("ci_upper", ""),
+                    for metric in metrics:
+                        row.extend([
+                            tst.get(metric, ""),
+                            tst.get(f"ci_lower_{metric}", ""),
+                            tst.get(f"ci_upper_{metric}", ""),
                         ])
-
-                # blank row between tasks for readability
+                    writer.writerow(row)
+ 
+                # Blank row between tasks for readability
                 writer.writerow([])
 
 

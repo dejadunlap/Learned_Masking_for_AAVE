@@ -251,9 +251,17 @@ class COLADataset(GlueDataset):
 
 
     def get_split_examples(self, which_split):
-        where_ = os.path.join(self.data_dir, "{}.tsv".format(which_split))
-        print("[INFO] {} is looking for {}".format(self.__class__.__name__, where_))
-        return self._create_examples(where_, which_split)
+        exs = []
+        if not isinstance(self.data_dir, list):
+            where_ = os.path.join(self.data_dir, "{}.tsv".format(which_split))
+            print("[INFO] {} is looking for {}".format(self.__class__.__name__, where_))
+            return self._create_examples(where_, which_split)
+        else: 
+            for dir in self.data_dir:
+                where_ = os.path.join(dir, "{}.tsv".format(which_split))
+                print("[INFO] {} is looking for {}".format(self.__class__.__name__, where_))
+                exs.append(self._create_examples(where_, which_split))
+            return exs
 
     def get_labels(self):
         return ["0", "1"]

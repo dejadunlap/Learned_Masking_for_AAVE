@@ -1,4 +1,0 @@
-Batch,Val Accuracy,Val CI Lower,Val CI Upper,Test Accuracy,Test CI Lower,Test CI Upper
-60,0.81875,0.79125,0.84375,,,
-120,0.85625,0.83,0.88,,,
-180,0.86375,0.83875,0.88625,,,

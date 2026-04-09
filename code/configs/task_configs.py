@@ -1,7 +1,9 @@
 from data_loader import SeqClsDataIter
 
 task2main_metric = {
-    "aave_mask": ["accuracy"],
+    "aave_mask": ["mcc"],
+    "sae_mask": ["mcc"],
+    "sae_aave_mask": ["mcc"],
     "sst2_aave": ["accuracy"],
     "mnli_aave": ["accuracy"],
     "qqp_aave": ["accuracy"],
