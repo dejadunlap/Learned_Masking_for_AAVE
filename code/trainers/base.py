@@ -10,7 +10,7 @@ class BaseTrainer(object):
         self.logger = logger
         self.log_fn_json = logger.log_metric
         self.log_fn = logger.log
-        self.criterion = criterion
+        self.criterion = criterion if conf.task not in ["stsb_aave", "stsb_sae"] else torch.nn.MSELoss()
 
         # counter.
         self._batch_step = 0

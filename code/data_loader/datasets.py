@@ -79,12 +79,11 @@ class SST2Dataset(object):
             next(f)
             for idx, line in enumerate(f):
                 line = line.strip().split("\t")
-                if len(line) < 3: 
-                    continue
-                uid, text, label = idx, line[0], line[1]
-                sentence_egs.append(
-                    SentenceExample(uid=uid, sent=text, label=label)
-                )
+                if "GLUE" in self.data_dir:
+                    uid, text, label = idx, line[0], line[1]
+                else: 
+                    uid, text, label = idx, line[2], line[3]
+                sentence_egs.append(SentenceExample(uid=uid, sent=text, label=label))
         return sentence_egs
 
 class QNLIDataset(GlueDataset):
@@ -112,10 +111,13 @@ class QNLIDataset(GlueDataset):
             next(f)
             for idx, line in enumerate(f):
                 segs = line.strip().split("\t")
-                assert len(segs) == 4
-                label = segs[-1]
-                text_a, text_b = segs[1], segs[2]
-                uid = "%s-%s" % (which_split, idx)
+                if "GLUE" in self.data_dir:
+                    assert len(segs) == 4
+                    label = segs[-1]
+                    text_a, text_b = segs[1], segs[2]
+                    uid = "%s-%s" % (which_split, idx)
+                else: 
+                    uid, text_a, text_b, label = segs[0], segs[2], segs[6], segs[7]
                 sentence_pair_egs.append(
                     SentencePairExample(
                         uid=uid, text_a=text_a, text_b=text_b, label=label
@@ -149,13 +151,11 @@ class RTEDataset(GlueDataset):
             next(f)
             for idx, line in enumerate(f):
                 segs = line.strip().split("\t")
-                assert len(segs) == 4
-                uid, text_a, text_b, label = line[0], line[1], line[2], line[3]
-                sentence_pair_egs.append(
-                    SentencePairExample(
-                        uid=uid, text_a=text_a, text_b=text_b, label=label
-                    )
-                )
+                if "GLUE" in self.data_dir:
+                    uid, text_a, text_b, label = segs[0], segs[1], segs[2], segs[3]
+                else: 
+                    uid, text_a, text_b, label = segs[0], segs[2], segs[6], segs[7]
+                sentence_pair_egs.append(SentencePairExample(uid=uid, text_a=text_a, text_b=text_b, label=label))
         return sentence_pair_egs
 
 class MNLIDataset(GlueDataset):
@@ -190,14 +190,16 @@ class MNLIDataset(GlueDataset):
             next(f)
             for idx, line in enumerate(f):
                 line = line.strip().split("\t")
-                uid, text_a, text_b, label = line[1], line[8], line[9], line[10]
+                if  "GLUE" in self.data_dir:
+                    uid, text_a, text_b, label = line[1], line[8], line[9], line[10]
+                else: 
+                    uid, text_a, text_b, label = line[1], line[10], line[13], line[14]
                 sentence_pair_egs.append(
                     SentencePairExample(
                         uid=uid, text_a=text_a, text_b=text_b, label=label
                     )
                 )
         return sentence_pair_egs
-
 
 class QQPDataset(GlueDataset):
     """
@@ -228,7 +230,10 @@ class QQPDataset(GlueDataset):
             next(f)
             for idx, line in enumerate(f):
                 line = line.strip().split("\t")
-                uid, text_a, text_b, label = line[0], line[3], line[4], line[5]
+                if "GLUE" in self.data_dir:
+                    uid, text_a, text_b, label = line[0], line[3], line[4], line[5]
+                else: 
+                    uid, text_a, text_b, label = line[0], line[4], line[7], line[8]
                 sentence_pair_egs.append(
                     SentencePairExample(
                         uid=uid, text_a=text_a, text_b=text_b, label=label
@@ -263,6 +268,7 @@ class COLADataset(GlueDataset):
                 if len(line) < 4: 
                     print(line)
                     continue
+
                 uid, label, _, text_a = line[0], line[1], line[2], line[3]
                 sentence_egs.append(
                     SentenceExample(uid=uid, sent=text_a, label=label)
@@ -294,7 +300,10 @@ class WNLIDataset(GlueDataset):
             next(f)
             for idx, line in enumerate(f):
                 segs = line.strip().split("\t")
-                uid, text_a, text_b, label = segs[0], segs[1], segs[2], segs[3]
+                if "GLUE" in self.data_dir:
+                    uid, text_a, text_b, label = segs[0], segs[1], segs[2], segs[3]
+                else:
+                    uid, text_a, text_b, label = segs[0], segs[3], segs[6], segs[7]
                 sentence_pair_egs.append(
                     SentencePairExample(
                         uid=uid, text_a=text_a, text_b=text_b, label=label
@@ -318,6 +327,9 @@ class STSBDataset(GlueDataset):
         exs= self._create_examples(where_, which_split)
         return exs
 
+    def get_labels(self):
+        return None
+
     def _create_examples(self, input_file, which_split):
         """ parse and convert raw string to SentencePairExample """
         sentence_pair_egs = []
@@ -325,12 +337,13 @@ class STSBDataset(GlueDataset):
             next(f)
             for idx, line in enumerate(f):
                 segs = line.strip().split("\t")
-                label = segs[-1]
-                text_a, text_b = segs[7], segs[8]
-                uid = idx
-                sentence_pair_egs.append(
-                    SentencePairExample(
-                        uid=uid, text_a=text_a, text_b=text_b, label=label
-                    )
-                )
+                if "GLUE" in self.data_dir:
+                    label = segs[-1]
+                    text_a, text_b = segs[7], segs[8]
+                    uid = idx
+                else: 
+                    uid, text_a, text_b, label = segs[0], segs[9], segs[12], segs[13]
+                new_ex = SentencePairExample(uid=uid, text_a=text_a, text_b=text_b, label=label)
+                print(new_ex)
+                sentence_pair_egs.append(new_ex)
         return sentence_pair_egs

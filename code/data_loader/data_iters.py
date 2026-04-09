@@ -79,6 +79,7 @@ class SeqClsDataIter(object):
         self.metrics = task2metrics[task]
         self.pdata = task2dataset[task](task2datadir[task])
 
+
         # extending class to accomodate stsb task
         if "stsb" in task: 
             self.num_labels = 1
@@ -116,7 +117,7 @@ class SeqClsDataIter(object):
             complete = False
         with open(meta_, "w+") as f:
             json.dump({"complete": complete, "uid": uid}, f)
-        return _SeqClsIter(fts)
+        return _SeqClsIter(fts) if "stsb" not in task else _SeqClsIter(fts, is_regression=True)
 
     @property
     def name(self):
@@ -128,12 +129,17 @@ class SeqClsDataIter(object):
 
 
 class _SeqClsIter(torch.utils.data.Dataset):
-    def __init__(self, fts):
+    def __init__(self, fts, is_regression=False):
         self.uides = [ft.uid for ft in fts]
+
+        if is_regression:
+            self.golds = torch.as_tensor([ft.gold for ft in fts], dtype=torch.float32)
+        else:
+            self.golds = torch.as_tensor([ft.gold for ft in fts], dtype=torch.long)
+
         self.input_idses = torch.as_tensor(
             [ft.input_ids for ft in fts], dtype=torch.long
         )
-        self.golds = torch.as_tensor([ft.gold for ft in fts], dtype=torch.long)
         self.attention_maskes = torch.as_tensor(
             [ft.attention_mask for ft in fts], dtype=torch.long
         )

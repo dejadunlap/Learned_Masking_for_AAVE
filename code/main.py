@@ -249,7 +249,7 @@ def experiment_with_mask(conf, model, inverse, baseline=False):
     tokenizer = BertTokenizer.from_pretrained(_conf.model)
 
     results = {}
-    for task in ["cola", "mnli", "qnli", "qqp", "rte", "sst2", "stsb", "wnli"]:
+    for task in ["cola", "rte", "sst2", "qnli", "mnli"]:
         for dialect in ["sae", "aave"]:
             task_name = f"{task}_{dialect}"
             conf.logger.log(f"[INFO] Evaluating inverse={inverse} mask on {task_name}, baseline={baseline}")
@@ -258,15 +258,14 @@ def experiment_with_mask(conf, model, inverse, baseline=False):
             _conf.task = task_name
             _conf.drop_rate = 0.1
             _conf.weight_decay = 0.01
-            _conf.max_seq_len = 128
-            _conf.batch_size = 16
-            _conf.lr = 5e-4 
+            _conf.max_seq_len = 512 if task in ["qnli", "mnli"] else 128
+            _conf.batch_size = 128 if task in ["qnli", "mnli", "qqp"] else 16
+            _conf.lr = 0.001 if task in ["mnli", "qnli", "sst2", "qqp"] else 5e-5
+            _conf.eval_every_batch = 10 if task == "wnli" else 60
 
             # Load data iterator to get num_labels BEFORE creating model
             data_iter_cls = task_configs.task2dataiter[task_name]
-            task_data_iter = data_iter_cls(
-                task_name, _conf.model, tokenizer, _conf.max_seq_len
-            )
+            task_data_iter = data_iter_cls(task_name, _conf.model, tokenizer, _conf.max_seq_len)
             num_labels = task_data_iter.num_labels
 
             # Create/reinitialize model with correct num_labels for this task
@@ -355,7 +354,7 @@ def main(conf):
     conf.mask_classifier = False
 
     model, data_iter = init_task(conf)
-    """
+    
 
     # baseline - no mask attached to NLU tasks
     conf.logger.log("Baseline Performance on NLU tasks.")
@@ -368,7 +367,6 @@ def main(conf):
     times["baseline"] = diff_base
 
     # experiementing with messing with which layers are masked
-    
     which_layers = {
         "2-11": "2,3,4,5,6,7,8,9,10,11",
         "2-4": "2,3,4",
@@ -389,6 +387,8 @@ def main(conf):
         conf.layers_to_mask = value
         conf.do_BL = False
         conf.do_MS = True
+        conf.lr = 2e-5
+        conf.lr_encoder = 5e-5
         conf.ptl_req_grad = False
 
         # should always start with aave/sae classification task
@@ -475,14 +475,17 @@ def main(conf):
     conf.is_finished = True
     logging.save_arguments(conf)
     os.system(f"echo {conf.checkpoint_root} >> {conf.job_id}")
+    """
 
 def save_results(res, experiment, which_layers=None):
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
     if which_layers is None: 
         path = f"results/results_{timestamp}_{experiment}.csv"
     else: 
         path = f"results/{which_layers}/results_{timestamp}_{experiment}.csv"
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    
     
     with open(path, mode='w', newline='') as file:
         writer = csv.writer(file)

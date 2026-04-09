@@ -39,7 +39,6 @@ def example_to_feature(examples, tokenizer, max_seq_len, label_list, pad_token=0
         assert (
             len(input_ids) == len(attention_mask) == len(token_type_ids) == max_seq_len
         )
-
         features.append(BertInputFeature(
             uuid = ex.uuid,
             input_ids = input_ids,
@@ -96,8 +95,12 @@ def glue_example_to_feature(
     print(
         "[INFO]: using following label set for task {} : {}.".format(task, label_list)
     )
-    # associate each label with an index
-    label_map = {l: i for i, l in enumerate(label_list)}
+    # associate each label with an index (slightly different for sts-b)
+    regression = True if label_list is None else False
+    if regression: 
+        label_map = None
+    else: 
+        label_map = {l: i for i, l in enumerate(label_list)}
 
     features = []
     print("[INFO] *** Convert Example to Features ***")
@@ -146,6 +149,12 @@ def glue_example_to_feature(
         attention_mask = attention_mask + [0] * padding_len
         token_type_ids = token_type_ids + [pad_token_segment_id] * padding_len
 
+        # sts-b task
+        if regression: 
+            label = float(eg.label)
+        else: 
+            label = label_map[eg.label]
+
         if idx < 2:
             print()
             print("[DEBUG] *** Example Entries in Dataset ***")
@@ -161,14 +170,14 @@ def glue_example_to_feature(
                     " ".join([str(x) for x in token_type_ids])
                 )
             )
-
+            print("[DEBUG] label: {}".format(label))
         features.append(
             BertInputFeature(
                 uid=eg.uid,
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 token_type_ids=token_type_ids,
-                label=label_map[eg.label],
+                label=label,
             )
         )
     return features
