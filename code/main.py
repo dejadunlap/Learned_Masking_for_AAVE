@@ -248,19 +248,20 @@ def experiment_with_mask(conf, model, inverse, baseline=False):
     tokenizer = BertTokenizer.from_pretrained(_conf.model)
 
     results = {}
-    for task in ["cola", "rte", "sst2", "mnli", "wnli"]:
+    #for task in ["cola", "rte", "sst2", "mnli", "wnli"]:
+    for task in ["mnli"]:
         for dialect in ["sae", "aave"]:
             task_name = f"{task}_{dialect}"
             conf.logger.log(f"[INFO] Evaluating inverse={inverse} mask on {task_name}, baseline={baseline}")
 
             # setting parameters for the task training
             _conf.task = task_name
-            _conf.drop_rate = 0.1
-            _conf.weight_decay = 0.01
             _conf.max_seq_len = 512 if task in ["qnli", "mnli"] else 128
-            _conf.batch_size = 128 if task in ["qnli", "mnli", "qqp"] else 16
-            _conf.lr = 0.001 if task in ["mnli", "qnli", "sst2", "qqp"] else 5e-5
-            _conf.eval_every_batch = 10 if task == "wnli" else 60
+            _conf.batch_size = 16
+            _conf.lr = 1e-5
+            _conf.eval_every_batch = 60
+            _conf.num_epochs = 5
+            _conf.weight_decay = 0.01
 
             # Load data iterator to get num_labels BEFORE creating model
             data_iter_cls = task_configs.task2dataiter[task_name]
@@ -335,15 +336,23 @@ def experiment_with_mask(conf, model, inverse, baseline=False):
     
 
 def main(conf):
-    """
-    # init the baseline task.
+
+    # init the baseline tasks.
     conf.do_BL = True
     conf.do_MS = False
     conf.ptl_req_grad = True
     conf.mask_classifier = False
+    conf.layers_to_mask=None
+    conf.masking_scheduler_conf=None
+
+    init_config(conf)
 
     model, data_iter = init_task(conf)
-    
+
+    model, masker = confirm_experiment(conf, model)
+
+    # init the recorders.
+    recorder_hooks = init_recorders(conf, masker) 
     
     # baseline - no mask attached to NLU tasks
     conf.logger.log("Baseline Performance on NLU tasks.")
@@ -351,7 +360,6 @@ def main(conf):
     conf.logger.log(f"Saving Baseline Results to Directory: results/results_{datetime.now()}")
     save_results(results_baseline, "baseline", folder="baseline")
     """
-    
     for mask_task in ["aave_mask", "sae_mask", "sae_aave_mask"]:
 
         # setting configs for masking experiments
@@ -415,7 +423,7 @@ def main(conf):
         conf.logger.log("[EXPERIMENT 2] Learned mask on NLU tasks.")
         results_transfer = experiment_with_mask(conf, model, inverse=False)
         save_results(results_transfer, "transfer", folder = mask_task)       
-
+    """
     # update the status.
     conf.logger.log("Finished with Experiments.")
     conf.is_finished = True
@@ -563,12 +571,12 @@ def init_config(conf):
             setattr(conf, f"masking_scheduler_{k}", v)
 
     # init the layers to mask.
-    assert conf.layers_to_mask is not None, "Please specify which BERT layers to mask."
-    conf.layers_to_mask_ = (
-        [int(x) for x in conf.layers_to_mask.split(",")]
-        if "," in conf.layers_to_mask
-        else [int(conf.layers_to_mask)]
-    )
+    if conf.layers_to_mask is not None:
+        conf.layers_to_mask_ = (
+            [int(x) for x in conf.layers_to_mask.split(",")]
+            if "," in conf.layers_to_mask
+            else [int(conf.layers_to_mask)]
+        )
 
 
     # init the params for structure pruning.

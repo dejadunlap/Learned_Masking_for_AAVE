@@ -12,7 +12,7 @@ def str2bool(v):
 
 def dict_parser(values):
     local_dict = {}
-    values = values[0]
+    print(values)
     values = values.split(",")
     for kv in values:
         k, v = kv.split("=")
